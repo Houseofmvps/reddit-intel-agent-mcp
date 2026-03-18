@@ -176,8 +176,9 @@ export class RedditAuth {
     });
 
     if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`OAuth token request failed: ${res.status} — ${text}`);
+      const text = await res.text().catch(() => '');
+      console.error(`[auth] OAuth failed: ${res.status} — ${text.substring(0, 100)}`);
+      throw new Error(`Reddit authentication failed (HTTP ${res.status}). Check your credentials.`);
     }
 
     const raw = await res.json();

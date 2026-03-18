@@ -82,7 +82,10 @@ export function handleRestRequest(
 }
 
 function jsonResponse(res: ServerResponse, status: number, data: unknown): void {
-  res.writeHead(status, { 'Content-Type': 'application/json' });
+  res.writeHead(status, {
+    'Content-Type': 'application/json',
+    'X-Content-Type-Options': 'nosniff',
+  });
   res.end(JSON.stringify(data));
 }
 

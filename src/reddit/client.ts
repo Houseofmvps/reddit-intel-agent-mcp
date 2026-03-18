@@ -283,7 +283,10 @@ export class RedditClient {
       case 403: return new Error(`Access forbidden — ${sub ? `r/${sub} may be private or quarantined` : 'content is restricted'}`);
       case 429: return new Error('Rate limited by Reddit — wait before retrying');
       case 503: return new Error('Reddit is temporarily unavailable');
-      default: return new Error(`Reddit API error (${status}): ${body.substring(0, 200)}`);
+      default: {
+        console.error(`[reddit] API error ${status}: ${body.substring(0, 200)}`);
+        return new Error(`Reddit API error (HTTP ${status}). Try again or check your query.`);
+      }
     }
   }
 

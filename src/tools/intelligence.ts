@@ -99,11 +99,12 @@ export class IntelligenceTools {
   // ─── detect_workarounds ───────────────────────────────────────
 
   async detectWorkarounds(params: z.infer<typeof detectWorkaroundsSchema>) {
+    const safeDomain = params.domain.replace(/"/g, '');
     const queries = [
-      `${params.domain} workaround`,
-      `${params.domain} hack`,
-      `${params.domain} built my own`,
-      `${params.domain} spreadsheet`,
+      `"${safeDomain}" workaround`,
+      `"${safeDomain}" hack`,
+      `"${safeDomain}" built my own`,
+      `"${safeDomain}" spreadsheet`,
     ];
 
     const allPosts: RedditPost[] = [];
@@ -316,9 +317,9 @@ export class IntelligenceTools {
 
   async extractFeatureGaps(params: z.infer<typeof extractFeatureGapsSchema>) {
     const queries = [
-      `${params.product} "feature request"`,
-      `${params.product} "wish" OR "should have" OR "why can't"`,
-      `${params.product} missing OR lacks`,
+      `"${params.product.replace(/"/g, '')}" "feature request"`,
+      `"${params.product.replace(/"/g, '')}" "wish" OR "should have" OR "why can't"`,
+      `"${params.product.replace(/"/g, '')}" missing OR lacks`,
     ];
 
     const allPosts: RedditPost[] = [];
@@ -373,9 +374,9 @@ export class IntelligenceTools {
 
   async trackPricingObjections(params: z.infer<typeof trackPricingObjectionsSchema>) {
     const queries = [
-      `${params.product} "too expensive" OR "overpriced" OR "not worth"`,
-      `${params.product} pricing OR price OR cost`,
-      `${params.product} "free alternative" OR "open source alternative"`,
+      `"${params.product.replace(/"/g, '')}" "too expensive" OR "overpriced" OR "not worth"`,
+      `"${params.product.replace(/"/g, '')}" pricing OR price OR cost`,
+      `"${params.product.replace(/"/g, '')}" "free alternative" OR "open source alternative"`,
     ];
 
     const allPosts: RedditPost[] = [];
@@ -429,9 +430,9 @@ export class IntelligenceTools {
 
   async findBuyerIntent(params: z.infer<typeof findBuyerIntentSchema>) {
     const queries = [
-      `${params.solution_category} "looking for" OR "recommend" OR "need a"`,
-      `${params.solution_category} "best" OR "which" OR "suggestions"`,
-      `${params.solution_category} "willing to pay" OR "budget"`,
+      `"${params.solution_category.replace(/"/g, '')}" "looking for" OR "recommend" OR "need a"`,
+      `"${params.solution_category.replace(/"/g, '')}" "best" OR "which" OR "suggestions"`,
+      `"${params.solution_category.replace(/"/g, '')}" "willing to pay" OR "budget"`,
     ];
 
     const allPosts: RedditPost[] = [];

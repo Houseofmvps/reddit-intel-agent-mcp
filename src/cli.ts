@@ -97,7 +97,9 @@ async function setupAuth(): Promise<void> {
       password = '';
       process.exit(1);
     } finally {
+      // Clear sensitive values from memory
       password = '';
+      (auth as any).config = null;
     }
   } finally {
     rl.close();

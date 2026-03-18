@@ -238,15 +238,20 @@ export async function startHttp(port: number) {
       ipRateMap.set(clientIp, { count: 1, windowStart: now });
     }
 
+    // ─── Security headers ─────────────────────────────────
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+
     // ─── API key auth (if REDDIT_INTEL_API_KEY is set) ──────
     const apiKeyRequired = !!apiKey;
     const publicPaths = ['/health', '/', '/.well-known/ai-plugin.json', '/.well-known/smithery.json', '/.well-known/mcp.json', '/api/openapi.json'];
     const isPublicPath = publicPaths.includes(url);
 
     if (apiKeyRequired && !isPublicPath) {
-      const providedKey = req.headers['authorization']?.replace(/^Bearer\s+/i, '').trim()
-        ?? (new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`)).searchParams.get('api_key');
-      if (providedKey !== apiKey) {
+      // Only accept API key via Authorization header — never query params (prevents log exposure)
+      const authHeader = req.headers['authorization'] ?? '';
+      const providedKey = authHeader.replace(/^Bearer\s+/i, '').trim();
+      if (!providedKey || providedKey !== apiKey) {
         res.writeHead(401, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Unauthorized. Provide API key via Authorization: Bearer <key> header.' }));
         return;
