@@ -1,0 +1,64 @@
+{
+  "name": "reddit-intelligence-agent-mcp",
+  "version": "0.1.0",
+  "description": "Reddit Opportunity Intelligence — scored startup ideas, market signals, and buyer intent from Reddit. MCP + REST dual-protocol server.",
+  "main": "dist/index.js",
+  "bin": {
+    "reddit-intel": "./dist/cli.js",
+    "reddit-intelligence-agent-mcp": "./dist/cli.js"
+  },
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc && chmod +x dist/cli.js 2>/dev/null || true",
+    "start": "node dist/index.js",
+    "start:http": "REDDIT_INTEL_HTTP=true node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --ext .ts",
+    "prepublishOnly": "npm run build",
+    "docker:build": "docker build -t reddit-intelligence-agent-mcp .",
+    "docker:run": "docker run -p 3000:3000 -e REDDIT_INTEL_HTTP=true reddit-intelligence-agent-mcp"
+  },
+  "keywords": [
+    "reddit",
+    "mcp",
+    "intelligence",
+    "startup",
+    "market-research",
+    "lead-generation",
+    "competitor-analysis",
+    "model-context-protocol",
+    "claude",
+    "chatgpt",
+    "gemini"
+  ],
+  "author": "thekingofmeta",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/thekingofmeta/reddit-intelligence-agent-mcp"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.5",
+    "zod": "^3.23.8",
+    "zod-to-json-schema": "^3.24.6"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.10",
+    "@vitest/coverage-v8": "^3.2.4",
+    "tsx": "^4.16.2",
+    "typescript": "^5.5.3",
+    "vitest": "^3.2.4"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ]
+}
