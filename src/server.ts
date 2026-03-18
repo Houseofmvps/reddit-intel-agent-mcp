@@ -26,7 +26,7 @@ import { handleRestRequest } from './api/rest.js';
 // import { PROMPT_PACKS } from './prompts/index.js';
 
 export const SERVER_NAME = 'reddit-intelligence-agent';
-export const SERVER_VERSION = '0.1.0';
+export const SERVER_VERSION = '1.4.0';
 
 // ─── Response validation ────────────────────────────────────────
 
@@ -269,15 +269,17 @@ export async function startHttp(port: number) {
         server: SERVER_NAME,
         version: SERVER_VERSION,
         tier,
+        baseUrl,
         protocol: ['mcp-stdio', 'mcp-streamable-http', 'mcp-sse', 'rest'],
         endpoints: {
-          mcp_streamable: '/mcp',
-          mcp_sse: '/sse',
-          mcp_sse_messages: '/messages',
-          rest_tools: '/api/tools',
-          rest_prompts: '/api/prompts',
-          openapi_spec: '/api/openapi.json',
-          openai_plugin: '/.well-known/ai-plugin.json',
+          mcp_streamable: `${baseUrl}/mcp`,
+          mcp_sse: `${baseUrl}/sse`,
+          mcp_sse_messages: `${baseUrl}/messages`,
+          rest_tools: `${baseUrl}/api/tools`,
+          rest_prompts: `${baseUrl}/api/prompts`,
+          openapi_spec: `${baseUrl}/api/openapi.json`,
+          openai_plugin: `${baseUrl}/.well-known/ai-plugin.json`,
+          mcp_discovery: `${baseUrl}/.well-known/mcp.json`,
         },
       }));
       return;
