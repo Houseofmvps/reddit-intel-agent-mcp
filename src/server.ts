@@ -223,10 +223,14 @@ export async function startHttp(port: number) {
 
   const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     // ─── CORS (all routes) ──────────────────────────────────
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+    const origin = req.headers.origin ?? '';
+    const trustedOrigins = ['https://buildradar.xyz', 'https://www.buildradar.xyz', 'https://app.buildradar.xyz', 'http://localhost:5173', 'http://localhost:3000'];
+    const isTrusted = trustedOrigins.includes(origin);
+    res.setHeader('Access-Control-Allow-Origin', isTrusted ? origin : '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept, MCP-Session-Id, Authorization, Cache-Control');
     res.setHeader('Access-Control-Expose-Headers', 'MCP-Session-Id');
+    if (isTrusted) res.setHeader('Access-Control-Allow-Credentials', 'true');
 
     if (req.method === 'OPTIONS') { res.writeHead(200); res.end(); return; }
 
@@ -262,13 +266,15 @@ export async function startHttp(port: number) {
         const { toNodeHandler } = await import('better-auth/node');
         const { getAuth } = await import('./auth/index.js');
         const auth = getAuth();
-        const authHandler = toNodeHandler(auth);
-        await authHandler(req, res);
+        const handler = toNodeHandler(auth);
+        await handler(req, res);
       } catch (err) {
-        console.error('[auth] Error handling auth request:', err);
-        if (!res.writableEnded) {
-          res.writeHead(503, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: 'Auth service not available' }));
+        console.error('[auth] Error handling auth request:', url, err);
+        if (!res.headersSent) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Auth error', detail: String(err) }));
+        } else if (!res.writableEnded) {
+          res.end();
         }
       }
       return;
