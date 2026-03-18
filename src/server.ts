@@ -130,6 +130,25 @@ export async function startStdio() {
 export async function startHttp(port: number) {
   const { server, cache, registry, tier } = await createIntelServer();
 
+  // ─── HTTP security ─────────────────────────────────────────
+  const apiKey = process.env.REDDIT_INTEL_API_KEY?.trim() || null;
+  const IP_RATE_LIMIT = 120; // requests per window
+  const IP_RATE_WINDOW_MS = 60_000; // 1 minute
+  const ipRateMap = new Map<string, { count: number; windowStart: number }>();
+
+  // Cleanup stale IP entries every 5 minutes
+  const ipCleanupInterval = setInterval(() => {
+    const cutoff = Date.now() - IP_RATE_WINDOW_MS;
+    for (const [ip, entry] of ipRateMap) {
+      if (entry.windowStart < cutoff) ipRateMap.delete(ip);
+    }
+  }, 5 * 60_000);
+  ipCleanupInterval.unref();
+
+  if (apiKey) {
+    console.error(`\x1b[33m[reddit-intel]\x1b[0m API key auth enabled (set via REDDIT_INTEL_API_KEY)`);
+  }
+
   // ─── Streamable HTTP transport (modern MCP) ────────────────
   const streamableTransport = new StreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
@@ -199,6 +218,37 @@ export async function startHttp(port: number) {
     if (req.method === 'OPTIONS') { res.writeHead(200); res.end(); return; }
 
     const url = (req.url ?? '').split('?')[0];
+
+    // ─── Per-IP rate limiting (HTTP) ────────────────────────
+    const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim()
+      ?? req.socket.remoteAddress ?? 'unknown';
+    const now = Date.now();
+    const ipEntry = ipRateMap.get(clientIp);
+    if (ipEntry && now - ipEntry.windowStart < IP_RATE_WINDOW_MS) {
+      ipEntry.count++;
+      if (ipEntry.count > IP_RATE_LIMIT) {
+        res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' });
+        res.end(JSON.stringify({ error: 'Too many requests. Max 120 requests per minute.' }));
+        return;
+      }
+    } else {
+      ipRateMap.set(clientIp, { count: 1, windowStart: now });
+    }
+
+    // ─── API key auth (if REDDIT_INTEL_API_KEY is set) ──────
+    const apiKeyRequired = !!apiKey;
+    const publicPaths = ['/health', '/', '/.well-known/ai-plugin.json', '/.well-known/smithery.json', '/.well-known/mcp.json', '/api/openapi.json'];
+    const isPublicPath = publicPaths.includes(url);
+
+    if (apiKeyRequired && !isPublicPath) {
+      const providedKey = req.headers['authorization']?.replace(/^Bearer\s+/i, '').trim()
+        ?? (new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`)).searchParams.get('api_key');
+      if (providedKey !== apiKey) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Unauthorized. Provide API key via Authorization: Bearer <key> header.' }));
+        return;
+      }
+    }
 
     // ─── REST API routes (/api/*) ───────────────────────────
     if (handleRestRequest(req, res, registry, tier)) return;
