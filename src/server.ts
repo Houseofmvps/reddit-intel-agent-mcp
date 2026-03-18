@@ -86,7 +86,7 @@ export async function createIntelServer() {
     {
       name: SERVER_NAME,
       version: SERVER_VERSION,
-      description: `Reddit Opportunity Intelligence — scored startup ideas, market signals, and buyer intent from Reddit.
+      description: `Reddit Revenue Intelligence for Builders — find your next customers from Reddit before your competitors do.
 
 TOOLS OVERVIEW:
 • Retrieval: browse_subreddit, search_reddit, post_details, user_profile
@@ -190,7 +190,7 @@ export async function startHttp(port: number) {
     schema_version: 'v1',
     name_for_human: 'BuildRadar — Reddit Intelligence',
     name_for_model: 'buildradar_reddit_intelligence',
-    description_for_human: 'Get scored startup ideas, market signals, and buyer intent from Reddit.',
+    description_for_human: 'Find your next customers from Reddit before your competitors do. 14 free intelligence tools.',
     description_for_model: 'Search and analyze Reddit for startup opportunities, pain points, competitor intelligence, buyer intent signals, and market gaps. Returns scored, structured data with source URLs.',
     auth: { type: 'none' },
     api: {
@@ -206,7 +206,7 @@ export async function startHttp(port: number) {
   const smitheryManifest = {
     name: 'reddit-intel-agent-mcp',
     display_name: 'Reddit Intelligence Agent',
-    description: 'Reddit Opportunity Intelligence — scored startup ideas, market signals, and buyer intent from Reddit.',
+    description: 'Reddit Revenue Intelligence for Builders — find your next customers from Reddit before your competitors do.',
     icon: 'https://raw.githubusercontent.com/Houseofmvps/reddit-intel-agent-mcp/main/logo.png',
     publisher: 'houseofmvps',
     homepage: 'https://buildradar.xyz',
@@ -313,7 +313,7 @@ export async function startHttp(port: number) {
       res.end(JSON.stringify({
         name: SERVER_NAME,
         version: SERVER_VERSION,
-        description: 'Reddit Opportunity Intelligence — scored startup ideas, market signals, and buyer intent.',
+        description: 'Reddit Revenue Intelligence for Builders — find your next customers from Reddit before your competitors do.',
         transports: {
           'streamable-http': { url: '/mcp' },
           'sse': { url: '/sse', messages_url: '/messages' },

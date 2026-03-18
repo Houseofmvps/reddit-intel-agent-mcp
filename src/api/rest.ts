@@ -146,7 +146,7 @@ function generateOpenAPISpec(tools: Array<{ name: string; description?: string; 
     info: {
       title: 'Reddit Intelligence Agent',
       version: '1.5.0',
-      description: 'Reddit Opportunity Intelligence — scored startup ideas, market signals, and buyer intent from Reddit. Provides 14 tools across three pillars: Idea Mining, Market Intelligence, and Lead Generation.',
+      description: 'Reddit Revenue Intelligence for Builders — find your next customers from Reddit before your competitors do. 14 free tools across three pillars: Idea Mining, Market Intelligence, and Lead Generation.',
     },
     servers: [
       { url: baseUrl, description: 'Reddit Intelligence Agent API' },

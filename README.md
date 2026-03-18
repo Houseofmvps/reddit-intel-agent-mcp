@@ -1,13 +1,13 @@
-# BuildRadar — Reddit Intelligence Agent MCP
+# BuildRadar — Reddit Revenue Intelligence for Builders
 
-**Turn Reddit into scored startup ideas, market signals, and buyer intent — right inside your AI assistant.**
+**Find your next customers from Reddit before your competitors do — right inside Claude, Cursor, or any AI tool.**
 
 [![npm version](https://img.shields.io/npm/v/reddit-intel-agent-mcp.svg)](https://www.npmjs.com/package/reddit-intel-agent-mcp)
 [![npm downloads](https://img.shields.io/npm/dm/reddit-intel-agent-mcp.svg)](https://www.npmjs.com/package/reddit-intel-agent-mcp)
 [![GitHub stars](https://img.shields.io/github/stars/Houseofmvps/reddit-intel-agent-mcp.svg)](https://github.com/Houseofmvps/reddit-intel-agent-mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-All 14 tools are **FREE**. No signup. No API keys. Works with Claude, ChatGPT, Gemini, Cursor, Windsurf, and any MCP client.
+All 14 tools are **100% free and open-source**. No signup. No API keys. No license keys. Works with Claude, ChatGPT, Gemini, Cursor, Windsurf, and any MCP client.
 
 ---
 
@@ -612,27 +612,32 @@ Follow the prompts to enter your credentials. They are saved locally.
 
 ---
 
-## Pricing (Founder-Friendly)
+## Pricing
 
-We built this for indie hackers, founders, and small teams. The open-source MCP is free forever.
+The open-source MCP is **free forever**. No license keys, no gating, no catch.
 
-| | Free MCP | Free Dashboard *(coming soon)* | Pro Dashboard |
-|---|----------|-------------------------------|---------------|
-| **All 14 tools** | Yes | Yes | Yes |
-| **Where it runs** | Your machine (local) | [app.buildradar.xyz](https://app.buildradar.xyz) | [app.buildradar.xyz](https://app.buildradar.xyz) |
-| **Queries** | Unlimited | 20/month | Unlimited |
-| **Monitors** | - | 1 | Unlimited |
-| **Alerts** | - | - | Yes (email + Slack) |
-| **Evidence exports** | Yes (local) | Yes | Yes |
-| **History** | Current session | 7 days | 90 days |
-| **Price** | **Free** | **Free** | **$14.99/mo** |
-| **Get it** | `npx reddit-intel-agent-mcp` | Coming soon | [buildradar.xyz](https://buildradar.xyz) |
+**[BuildRadar Pro](https://buildradar.xyz)** ($14.99/mo) is a separate product — an automated revenue intelligence dashboard at [app.buildradar.xyz](https://app.buildradar.xyz) that runs 24/7 and finds your next customers while you sleep.
 
-> **The open-source MCP is free forever.** The dashboard is where we add value beyond what a CLI can do — persistent monitors, alerts, trend history, and team collaboration.
+| | Free MCP (this repo) | BuildRadar Pro |
+|---|----------------------|----------------|
+| **All 14 tools** | Yes | Yes + automated |
+| **Where it runs** | Your machine (local) | [app.buildradar.xyz](https://app.buildradar.xyz) |
+| **How it works** | You ask → it answers | It monitors 24/7 → emails you opportunities |
+| **Results per query** | 10 | Unlimited |
+| **Automated monitors** | — | Unlimited |
+| **Daily opportunity briefs** | — | Email + Slack |
+| **Competitor alerts** | — | Real-time |
+| **Trend tracking** | — | Historical charts |
+| **Lead tracking** | — | With suggested replies |
+| **Evidence exports** | JSON/Markdown | + PDF reports |
+| **Price** | **Free forever** | **$14.99/mo** |
+| **Get it** | `npx reddit-intel-agent-mcp` | [buildradar.xyz](https://buildradar.xyz) |
+
+> **Why pay?** The MCP is pull — you ask, it answers, then forgets. Pro is push — it monitors Reddit 24/7, scores opportunities, and delivers them to your inbox every morning. It catches the 3am post where someone says "I'd pay $500/mo for a tool that does X" — before your competitors do.
 
 ---
 
-## Comparison with Other Tools
+## Comparison
 
 How BuildRadar compares to [reddit-mcp-buddy](https://github.com/nicholasgriffintn/reddit-mcp-buddy), the most popular Reddit MCP server:
 
@@ -657,6 +662,18 @@ How BuildRadar compares to [reddit-mcp-buddy](https://github.com/nicholasgriffin
 | Open source | Yes | **Yes** |
 | Auth required | Yes (Reddit API) | **No** (optional) |
 | Price | Free | **Free** |
+
+### vs Paid Reddit Intelligence Tools
+
+| Feature | GummySearch ($29+/mo) | Syften ($19+/mo) | Brand24 ($79+/mo) | BuildRadar Pro ($14.99/mo) |
+|---------|----------------------|-------------------|--------------------|-----------------------------|
+| Reddit intelligence | Basic research | Keyword alerts | Broad monitoring | **AI-scored opportunities** |
+| Works in your AI IDE | No | No | No | **Yes (free MCP)** |
+| Opportunity scoring (0-100) | No | No | No | **Yes** |
+| Buyer intent detection | No | No | No | **Yes** |
+| Pain point clustering | No | No | No | **Yes** |
+| Automated daily briefs | No | Email only | Yes | **Yes** |
+| Price | $29-99/mo | $19-79/mo | $79-299/mo | **$14.99/mo** |
 
 ---
 
@@ -865,7 +882,6 @@ src/
     auth.ts             Reddit OAuth (anonymous, app-only, authenticated)
     cache.ts            In-memory cache with TTL
     rate-limiter.ts     Token bucket rate limiter
-    license.ts          License key validation
     tiers.ts            Free/Pro tier enforcement
   intelligence/
     patterns.ts         Signal pattern matching (pain, workaround, intent, etc.)
@@ -901,4 +917,4 @@ tests/
 
 ---
 
-Made for founders, by a founder. [MIT License](LICENSE).
+Made for builders, by a builder. **Find your next customers from Reddit before your competitors do.** [MIT License](LICENSE).

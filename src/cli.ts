@@ -131,10 +131,10 @@ if (args.includes('--auth') || args.includes('-a')) {
 } else if (args.includes('--help') || args.includes('-h')) {
   console.log(`
   Reddit Intelligence Agent v${SERVER_VERSION}
-  Reddit Opportunity Intelligence — scored startup ideas, market signals, and buyer intent.
+  Reddit Revenue Intelligence for Builders — find your next customers from Reddit.
 
-  All 14 tools are FREE. Pro ($14.99/mo) unlocks unlimited results & full scoring.
-  https://buildradar.xyz
+  All 14 tools are 100% FREE. No license keys. No gating.
+  BuildRadar Pro ($14.99/mo) — automated 24/7 monitoring + daily briefs → https://buildradar.xyz
 
   Usage:
     reddit-intel                Start MCP server (stdio mode, for Claude Desktop)

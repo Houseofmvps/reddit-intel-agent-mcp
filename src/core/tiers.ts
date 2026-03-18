@@ -21,7 +21,7 @@ export function canAccessTool(currentTier: ProductTier, requiredTier: ToolTier):
 }
 
 export function tierGateMessage(toolName: string, _requiredTier: ToolTier): string {
-  return `[${toolName}] requires Pro. Get Pro ($14.99/mo) at https://buildradar.xyz for unlimited results, full scoring, and clustering.`;
+  return `[${toolName}] requires Pro. Get BuildRadar Pro ($14.99/mo) at https://buildradar.xyz — automated 24/7 monitoring, daily opportunity briefs, competitor alerts, and lead tracking.`;
 }
 
 /** Get result limits for the current tier */
