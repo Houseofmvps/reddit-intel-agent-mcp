@@ -758,7 +758,6 @@ All hosted endpoints are live at `https://api.buildradar.xyz`. For self-hosted, 
 | `REDDIT_INTEL_USERNAME` | Reddit username (for 100 req/min authenticated tier) | No | — |
 | `REDDIT_INTEL_PASSWORD` | Reddit password | No | — |
 | `REDDIT_INTEL_TIER` | Product tier: `free` or `pro` | No | `free` |
-| `REDDIT_INTEL_LICENSE_KEY` | License key for Pro tier (via [buildradar.xyz](https://buildradar.xyz)) | No | — |
 
 ---
 

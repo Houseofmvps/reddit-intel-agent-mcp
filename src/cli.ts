@@ -152,8 +152,7 @@ if (args.includes('--auth') || args.includes('-a')) {
     REDDIT_INTEL_PORT           HTTP port (default: 3000)
     REDDIT_INTEL_API_KEY        API key for HTTP auth (optional, for production)
     REDDIT_INTEL_BASE_URL       Public base URL (for OpenAPI spec)
-    REDDIT_INTEL_TIER           Product tier (free/pro/team)
-    REDDIT_INTEL_LICENSE_KEY    License key for Pro/Team
+    REDDIT_INTEL_TIER           Product tier (free/pro)
 
   Integrations:
     Claude Desktop: Add to claude_desktop_config.json with "npx reddit-intel-agent-mcp"
