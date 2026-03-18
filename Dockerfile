@@ -4,6 +4,7 @@ COPY package*.json ./
 RUN npm ci --ignore-scripts
 COPY tsconfig.json ./
 COPY src/ src/
+COPY README.md ./
 RUN npx tsc
 
 FROM node:20-slim
