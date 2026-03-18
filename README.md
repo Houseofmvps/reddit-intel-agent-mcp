@@ -1,46 +1,16 @@
 # Reddit Intelligence Agent MCP
 
-Reddit Opportunity Intelligence — scored startup ideas, market signals, and buyer intent from Reddit.
+Turn Reddit into scored startup ideas, market signals, and buyer intent — right inside your AI assistant.
 
-A dual-protocol server (MCP + REST API) that turns Reddit into an actionable intelligence source. Works with **Claude Desktop**, **Claude Code**, **ChatGPT**, and **Gemini**.
+**All 13 tools are FREE.** Works with Claude, ChatGPT, Gemini, Cursor, Windsurf, and any MCP client.
 
-## What It Does
-
-| Pillar | Free Tools | Pro Tools |
-|--------|-----------|-----------|
-| **Idea Mining** | Browse, Search | Pain Points, Workarounds, Feature Gaps, Opportunity Scoring |
-| **Market Intelligence** | Post Details | Competitor Monitoring, Pricing Objections |
-| **Lead Generation** | User Profile | Buyer Intent, ICP Builder, Evidence Pack Export |
-
-### Intelligence Features
-- **Pattern Detection** — 60+ regex rules across 9 signal categories (pain, workaround, buyer intent, switching, feature requests, pricing objections)
-- **Scoring Engine** — Three 0-100 scoring systems: Opportunity Score, Signal Score, Lead Score
-- **Clustering** — Automatic topic clustering via keyword extraction and Jaccard similarity
-- **Evidence Packs** — Export structured JSON/Markdown reports with source URLs
-
-## Quick Start
-
-```bash
-npx reddit-intel-agent-mcp
-```
-
-No API key required. Works immediately with anonymous Reddit access (10 req/min).
-
-### Higher Rate Limits (Optional)
-
-```bash
-npx reddit-intel-agent-mcp --auth
-```
-
-Follow the prompts to add Reddit API credentials:
-- **App-Only**: 60 req/min (just Client ID + Secret)
-- **Authenticated**: 100 req/min (add username + password)
-
-## Integration
+## Quick Start (2 minutes)
 
 ### Claude Desktop
 
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+1. Open Claude Desktop
+2. Go to **Settings** (gear icon) > **Developer** > **Edit Config**
+3. Paste this into the file:
 
 ```json
 {
@@ -53,105 +23,219 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 }
 ```
 
+4. Restart Claude Desktop
+5. You'll see "reddit-intel" in the tools menu. Try asking: *"Search Reddit for pain points about project management tools"*
+
 ### Claude Code
+
+Run this one command in your terminal:
 
 ```bash
 claude mcp add --transport stdio reddit-intel -s user -- npx -y reddit-intel-agent-mcp
 ```
 
-### ChatGPT (Custom GPT Actions)
+Done. Now ask Claude Code: *"Find buyer intent for CRM tools on Reddit"*
+
+### Cursor
+
+1. Open Cursor
+2. Go to **Settings** > **MCP**
+3. Click **Add MCP Server**
+4. Name: `reddit-intel`
+5. Command: `npx -y reddit-intel-agent-mcp`
+6. Restart Cursor
+
+### Windsurf
+
+1. Open Windsurf
+2. Go to **Settings** > **MCP Servers**
+3. Add server with command: `npx -y reddit-intel-agent-mcp`
+
+### ChatGPT (Custom GPT)
+
+1. Start the HTTP server:
+```bash
+npx reddit-intel-agent-mcp --http
+```
+2. Go to [chat.openai.com](https://chat.openai.com) > **Explore GPTs** > **Create**
+3. Click **Configure** > **Actions** > **Import from URL**
+4. Enter: `http://localhost:3000/.well-known/ai-plugin.json`
+5. Save and use your custom GPT
+
+### Gemini
+
+1. Start the HTTP server:
+```bash
+npx reddit-intel-agent-mcp --http
+```
+2. Use the REST endpoints:
+```bash
+# List all tools
+curl http://localhost:3000/api/tools
+
+# Call a tool
+curl -X POST http://localhost:3000/api/tools/search_reddit \
+  -H "Content-Type: application/json" \
+  -d '{"query": "best CRM for startups", "subreddits": ["startups", "SaaS"]}'
+```
+
+### Any MCP Client
+
+```bash
+# Option 1: stdio (most common)
+npx reddit-intel-agent-mcp
+
+# Option 2: HTTP with StreamableHTTP
+npx reddit-intel-agent-mcp --http
+# Connect to: http://localhost:3000/mcp
+
+# Option 3: HTTP with SSE (legacy)
+npx reddit-intel-agent-mcp --http
+# SSE stream: GET http://localhost:3000/sse
+# Send messages: POST http://localhost:3000/messages?sessionId=xxx
+```
+
+### Any HTTP Client (Perplexity, Grok, custom apps)
 
 ```bash
 npx reddit-intel-agent-mcp --http
-# Server starts on http://localhost:3000
-# Import OpenAPI spec from http://localhost:3000/api/openapi.json
+
+# Call any tool via REST
+curl -X POST http://localhost:3000/api/tools/find_pain_points \
+  -H "Content-Type: application/json" \
+  -d '{"query": "email marketing", "subreddits": ["startups", "Entrepreneur"]}'
 ```
 
-### Gemini Extensions
+## What You Can Do
 
-```bash
-npx reddit-intel-agent-mcp --http
-# Use REST endpoints at http://localhost:3000/api/tools/*
-```
+### Ask your AI assistant things like:
 
-## REST API
+**Idea Validation**
+- *"Score the opportunity for an AI writing tool based on Reddit data"*
+- *"Find pain points about project management in r/startups and r/SaaS"*
+- *"What workarounds are people building for expense tracking?"*
 
-When running with `--http`, the server exposes:
+**Market Research**
+- *"Monitor how people talk about Notion vs Coda on Reddit"*
+- *"What features are missing from Figma according to Reddit users?"*
+- *"Track pricing objections for Slack"*
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/tools` | GET | List all available tools |
-| `/api/prompts` | GET | List prompt packs |
-| `/api/tools/:name` | POST | Execute a tool |
-| `/api/openapi.json` | GET | OpenAPI 3.1 spec |
-| `/health` | GET | Health check |
-| `/mcp` | POST | MCP protocol endpoint |
+**Lead Generation**
+- *"Find people on Reddit looking to buy a CRM tool"*
+- *"Build an ideal customer profile for developer tools from Reddit"*
+- *"Export an evidence pack of all the data you found"*
 
-## Tools
+## All 13 Tools
 
-### Free (4 tools)
-- **browse_subreddit** — Browse posts from any subreddit with sorting/filtering
-- **search_reddit** — Search across multiple subreddits simultaneously
-- **post_details** — Get full post content with comments and extracted links
-- **user_profile** — Analyze a Reddit user's activity and expertise
+Every tool is free. No signup required. No API key needed.
 
-### Pro (8 tools)
-- **find_pain_points** — Detect and score user frustrations and unmet needs
-- **detect_workarounds** — Find DIY solutions indicating market gaps
-- **score_opportunity** — Calculate 0-100 opportunity score with breakdown
-- **monitor_competitors** — Track competitor mentions, sentiment, and switching intent
-- **extract_feature_gaps** — Identify missing features users want
-- **track_pricing_objections** — Find pricing complaints and willingness to pay
-- **find_buyer_intent** — Detect users actively looking to buy
-- **build_icp** — Build Ideal Customer Profile from Reddit data
+| # | Tool | What it does |
+|---|------|-------------|
+| 1 | `browse_subreddit` | Browse posts from any subreddit with sorting |
+| 2 | `search_reddit` | Search across multiple subreddits at once |
+| 3 | `post_details` | Get full post + comments + extracted links |
+| 4 | `user_profile` | Analyze a Reddit user's activity and expertise |
+| 5 | `find_pain_points` | Detect user frustrations with severity scoring |
+| 6 | `detect_workarounds` | Find DIY solutions = market gaps |
+| 7 | `score_opportunity` | 0-100 score for any startup idea |
+| 8 | `monitor_competitors` | Track competitor sentiment and switching intent |
+| 9 | `extract_feature_gaps` | Find features users want but don't have |
+| 10 | `track_pricing_objections` | Find pricing complaints and alternatives sought |
+| 11 | `find_buyer_intent` | Detect people actively looking to buy |
+| 12 | `build_icp` | Build Ideal Customer Profile from Reddit data |
+| 13 | `export_evidence_pack` | Export structured reports (JSON/Markdown) |
 
-### Export (1 tool)
-- **export_evidence_pack** — Generate structured reports (JSON/Markdown)
+## Pricing (Founder-Friendly)
 
-## Prompt Packs
+We built this for indie hackers, founders, and small teams. Everyone gets access to everything.
 
-Pre-built workflows that chain multiple tools:
+| | Free | Pro ($9/mo) | Team ($29/mo) |
+|---|---|---|---|
+| **All 13 tools** | Yes | Yes | Yes |
+| **Results per query** | 10 | Unlimited | Unlimited |
+| **Scoring & signals** | Basic | Full breakdowns | Full breakdowns |
+| **Clustering analysis** | - | Yes | Yes |
+| **Opportunity hints** | - | Yes | Yes |
+| **Evidence packs** | Yes | Yes | Yes |
+| **API keys** | 1 | 1 | 5 |
+| **Support** | GitHub Issues | Email | Priority |
 
-**Free**: validate_startup_idea, quick_market_scan, subreddit_deep_dive, user_research, find_underserved_niches
+**Pro is less than the price of two coffees.** Set it up in 30 seconds:
 
-**Pro**: full_opportunity_assessment, competitor_intelligence_report, lead_discovery_workflow, pricing_strategy_research, icp_builder
-
-## Product Tiers
-
-| Feature | Free | Pro ($49/mo) | Team ($199/mo) |
-|---------|------|-------------|----------------|
-| Retrieval tools | 4 | 4 | 4 |
-| Intelligence tools | 2 (limited) | 8 (full) | 8 (full) |
-| Results per query | 5 | Unlimited | Unlimited |
-| Scoring | - | Full | Full |
-| Evidence packs | - | JSON + Markdown | JSON + Markdown |
-| Prompt packs | 5 | 10 | 10 |
-
-Configure tier via environment:
 ```bash
 export REDDIT_INTEL_TIER=pro
-export REDDIT_INTEL_LICENSE_KEY=your-key
+export REDDIT_INTEL_LICENSE_KEY=your-key-here
 ```
 
-## Docker
+## Higher Rate Limits (Optional)
+
+By default you get 10 Reddit requests/minute (no signup needed). Want faster?
+
+```bash
+npx reddit-intel-agent-mcp --auth
+```
+
+Follow the prompts to add Reddit API credentials:
+- **App-Only** (just Client ID + Secret): 60 req/min
+- **Authenticated** (add username + password): 100 req/min
+
+Get credentials at: https://www.reddit.com/prefs/apps (click "Create App" > type "script")
+
+## Production Deployment
+
+### Deploy to Railway (recommended)
+
+1. Fork this repo
+2. Go to [railway.app](https://railway.app) > New Project > Deploy from GitHub
+3. Add environment variables:
+```
+REDDIT_INTEL_HTTP=true
+REDDIT_INTEL_API_KEY=your-secret-api-key
+```
+
+### Deploy with Docker
 
 ```bash
 docker build -t reddit-intel .
-docker run -p 3000:3000 -e REDDIT_INTEL_HTTP=true reddit-intel
+docker run -p 3000:3000 \
+  -e REDDIT_INTEL_HTTP=true \
+  -e REDDIT_INTEL_API_KEY=your-secret-api-key \
+  reddit-intel
 ```
+
+### Security
+
+When running in HTTP mode with `--http`:
+- Set `REDDIT_INTEL_API_KEY` to require authentication on all endpoints
+- Clients authenticate via `Authorization: Bearer <key>` header
+- Per-IP rate limiting (120 req/min) is built in
+- Public endpoints (health, OpenAPI spec, discovery) don't require auth
 
 ## Environment Variables
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `REDDIT_INTEL_CLIENT_ID` | Reddit app client ID | - |
-| `REDDIT_INTEL_CLIENT_SECRET` | Reddit app client secret | - |
-| `REDDIT_INTEL_USERNAME` | Reddit username | - |
-| `REDDIT_INTEL_PASSWORD` | Reddit password | - |
-| `REDDIT_INTEL_HTTP` | Enable HTTP server | `false` |
-| `REDDIT_INTEL_PORT` | HTTP port | `3000` |
-| `REDDIT_INTEL_TIER` | Product tier (free/pro/team) | `free` |
-| `REDDIT_INTEL_LICENSE_KEY` | License key for Pro/Team | - |
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `REDDIT_INTEL_HTTP` | Enable HTTP server | No (default: false) |
+| `REDDIT_INTEL_PORT` | HTTP port | No (default: 3000) |
+| `REDDIT_INTEL_API_KEY` | API key for HTTP auth | No (recommended for production) |
+| `REDDIT_INTEL_BASE_URL` | Public URL for OpenAPI spec | No |
+| `REDDIT_INTEL_CLIENT_ID` | Reddit app client ID | No (for higher rate limits) |
+| `REDDIT_INTEL_CLIENT_SECRET` | Reddit app client secret | No |
+| `REDDIT_INTEL_USERNAME` | Reddit username | No (for 100 req/min) |
+| `REDDIT_INTEL_PASSWORD` | Reddit password | No |
+| `REDDIT_INTEL_TIER` | Product tier (free/pro/team) | No (default: free) |
+| `REDDIT_INTEL_LICENSE_KEY` | License key for Pro/Team | No |
+
+## Protocols Supported
+
+| Protocol | Endpoint | Use case |
+|----------|----------|----------|
+| MCP Stdio | `npx reddit-intel-agent-mcp` | Claude Desktop, Claude Code, Cursor, Windsurf, Cline |
+| MCP StreamableHTTP | `POST /mcp` | Remote MCP clients, modern MCP spec |
+| MCP SSE | `GET /sse` + `POST /messages` | Cursor, Cline, older MCP clients |
+| REST API | `/api/tools/:name` | ChatGPT, Gemini, Perplexity, any HTTP client |
+| OpenAI Plugin | `/.well-known/ai-plugin.json` | ChatGPT GPT Store |
+| MCP Discovery | `/.well-known/mcp.json` | MCP registries, auto-detection |
 
 ## Development
 
@@ -165,4 +249,4 @@ npm test
 
 ## License
 
-MIT
+MIT — use it however you want.

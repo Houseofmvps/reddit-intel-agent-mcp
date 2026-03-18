@@ -1,10 +1,9 @@
 /**
  * Reddit Intelligence Agent — Intelligence tools
  *
- * Free (basic): find_pain_points (top 5 unscored), detect_workarounds (top 5)
- * Pro (scored): find_pain_points (unlimited scored), detect_workarounds (clustered),
- *               score_opportunity, monitor_competitors, extract_feature_gaps,
- *               track_pricing_objections, find_buyer_intent, build_icp
+ * All 13 tools available on free tier with result limits (10 results).
+ * Pro ($9/mo): Unlimited results, full scoring breakdowns, clustering.
+ * Team ($29/mo): Everything in Pro + priority support.
  */
 
 import { z } from 'zod';
@@ -62,9 +61,9 @@ export class IntelligenceTools {
     // Sort by engagement (score + comments)
     painPoints.sort((a, b) => (b.score + b.num_comments) - (a.score + a.num_comments));
 
-    // Free tier: top 5, no scoring summary
+    // Free tier: top 10 with basic scoring
     if (this.tier === 'free') {
-      const limited = painPoints.slice(0, 5);
+      const limited = painPoints.slice(0, 10);
       return {
         pain_points: limited.map(p => ({
           text: p.text,
@@ -73,10 +72,12 @@ export class IntelligenceTools {
           score: p.score,
           num_comments: p.num_comments,
           author: p.author,
+          severity: p.severity,
+          signals: p.signals,
         })),
         total_found: painPoints.length,
-        note: painPoints.length > 5
-          ? `Showing 5 of ${painPoints.length} pain points. Upgrade to Pro for full scored results with severity ratings and opportunity hints.`
+        note: painPoints.length > 10
+          ? `Showing 10 of ${painPoints.length} pain points. Upgrade to Pro ($9/mo) for unlimited results with opportunity hints.`
           : undefined,
       };
     }
@@ -141,9 +142,9 @@ export class IntelligenceTools {
 
     workarounds.sort((a, b) => b.upvotes - a.upvotes);
 
-    // Free tier: top 5 only
+    // Free tier: top 10 with basic info
     if (this.tier === 'free') {
-      const limited = workarounds.slice(0, 5);
+      const limited = workarounds.slice(0, 10);
       return {
         workarounds: limited.map(w => ({
           description: w.description,
@@ -151,10 +152,12 @@ export class IntelligenceTools {
           subreddit: w.subreddit,
           upvotes: w.upvotes,
           author: w.author,
+          frustration_level: w.frustration_level,
+          signals: w.signals,
         })),
         total_found: workarounds.length,
-        note: workarounds.length > 5
-          ? `Showing 5 of ${workarounds.length} workarounds. Upgrade to Pro for clustered analysis with frustration levels and tool mentions.`
+        note: workarounds.length > 10
+          ? `Showing 10 of ${workarounds.length} workarounds. Upgrade to Pro ($9/mo) for unlimited results with clustering and tool mentions.`
           : undefined,
       };
     }

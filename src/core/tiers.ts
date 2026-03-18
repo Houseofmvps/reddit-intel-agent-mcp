@@ -1,5 +1,10 @@
 /**
  * Reddit Intelligence Agent — Product tier enforcement
+ *
+ * Founder-friendly pricing:
+ * - Free: All 13 tools with result limits (10 results, basic scoring)
+ * - Pro ($9/mo): Unlimited results, full scoring breakdowns, evidence packs
+ * - Team ($29/mo): Everything in Pro + multiple API keys, priority support
  */
 
 import type { ProductTier, ToolTier } from '../types/index.js';
@@ -27,8 +32,14 @@ export function canAccessTool(currentTier: ProductTier, requiredTier: ToolTier):
 
 export function tierGateMessage(toolName: string, requiredTier: ToolTier): string {
   const upgrade = requiredTier === 'pro'
-    ? 'Upgrade to Pro ($49/mo) for scored intelligence, competitor monitoring, and evidence exports.'
-    : 'Upgrade to Team ($199/mo) for lead ranking, workspaces, and priority support.';
+    ? 'Upgrade to Pro ($9/mo) for unlimited results, full scoring, and evidence exports.'
+    : 'Upgrade to Team ($29/mo) for multiple API keys, priority support, and team features.';
   return `[${toolName}] requires the ${requiredTier} tier. ${upgrade} ` +
          `Set REDDIT_INTEL_TIER=${requiredTier} and REDDIT_INTEL_LICENSE_KEY to activate.`;
+}
+
+/** Get result limits for the current tier */
+export function getResultLimit(tier: ProductTier): number {
+  if (tier === 'pro' || tier === 'team') return 100;
+  return 10; // free tier: 10 results per tool call
 }

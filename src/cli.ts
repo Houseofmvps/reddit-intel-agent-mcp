@@ -131,6 +131,8 @@ if (args.includes('--auth') || args.includes('-a')) {
   Reddit Intelligence Agent v${SERVER_VERSION}
   Reddit Opportunity Intelligence — scored startup ideas, market signals, and buyer intent.
 
+  All 13 tools are FREE. Pro ($9/mo) unlocks unlimited results & full scoring.
+
   Usage:
     reddit-intel                Start MCP server (stdio mode, for Claude Desktop)
     reddit-intel --http         Start dual-protocol server (MCP + REST, for ChatGPT/Gemini/web)
@@ -145,15 +147,18 @@ if (args.includes('--auth') || args.includes('-a')) {
     REDDIT_INTEL_PASSWORD       Reddit password (optional, for 100 req/min)
     REDDIT_INTEL_HTTP           Run HTTP server (true/false)
     REDDIT_INTEL_PORT           HTTP port (default: 3000)
+    REDDIT_INTEL_API_KEY        API key for HTTP auth (optional, for production)
+    REDDIT_INTEL_BASE_URL       Public base URL (for OpenAPI spec)
     REDDIT_INTEL_TIER           Product tier (free/pro/team)
     REDDIT_INTEL_LICENSE_KEY    License key for Pro/Team
 
   Integrations:
     Claude Desktop: Add to claude_desktop_config.json with "npx reddit-intel-agent-mcp"
     Claude Code:    claude mcp add --transport stdio reddit-intel -s user -- npx -y reddit-intel-agent-mcp
-    ChatGPT:        Start with --http, use /api/openapi.json for custom GPT Actions
+    Cursor:         Add MCP server in Settings > MCP with "npx reddit-intel-agent-mcp"
+    ChatGPT:        Start with --http, import /.well-known/ai-plugin.json as GPT Action
     Gemini:         Start with --http, use /api/tools/* REST endpoints
-    Any MCP client: Use stdio transport with "npx reddit-intel-agent-mcp"
+    Any MCP:        stdio OR http://localhost:3000/mcp (StreamableHTTP) OR /sse (SSE)
 `);
 } else if (args.includes('--version') || args.includes('-v')) {
   console.log(`reddit-intelligence-agent v${SERVER_VERSION}`);
