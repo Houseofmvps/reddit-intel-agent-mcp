@@ -131,7 +131,8 @@ if (args.includes('--auth') || args.includes('-a')) {
   Reddit Intelligence Agent v${SERVER_VERSION}
   Reddit Opportunity Intelligence — scored startup ideas, market signals, and buyer intent.
 
-  All 13 tools are FREE. Pro ($9/mo) unlocks unlimited results & full scoring.
+  All 14 tools are FREE. Pro ($7.99/mo) unlocks unlimited results & full scoring.
+  https://buildradar.xyz
 
   Usage:
     reddit-intel                Start MCP server (stdio mode, for Claude Desktop)

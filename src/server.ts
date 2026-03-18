@@ -174,20 +174,23 @@ export async function startHttp(port: number) {
     return sseServer;
   }
 
+  // ─── Base URL for manifests ─────────────────────────────────
+  const baseUrl = process.env.REDDIT_INTEL_BASE_URL ?? `http://localhost:${port}`;
+
   // ─── OpenAI plugin manifest ────────────────────────────────
   const aiPluginManifest = {
     schema_version: 'v1',
-    name_for_human: 'Reddit Intelligence Agent',
-    name_for_model: 'reddit_intelligence',
+    name_for_human: 'BuildRadar — Reddit Intelligence',
+    name_for_model: 'buildradar_reddit_intelligence',
     description_for_human: 'Get scored startup ideas, market signals, and buyer intent from Reddit.',
     description_for_model: 'Search and analyze Reddit for startup opportunities, pain points, competitor intelligence, buyer intent signals, and market gaps. Returns scored, structured data with source URLs.',
     auth: { type: 'none' },
     api: {
       type: 'openapi',
-      url: `http://localhost:${port}/api/openapi.json`,
+      url: `${baseUrl}/api/openapi.json`,
     },
-    logo_url: `http://localhost:${port}/logo.png`,
-    contact_email: 'support@houseofmvps.com',
+    logo_url: `${baseUrl}/logo.png`,
+    contact_email: 'support@buildradar.xyz',
     legal_info_url: 'https://github.com/Houseofmvps/reddit-intel-agent-mcp/blob/main/LICENSE',
   };
 
@@ -198,7 +201,7 @@ export async function startHttp(port: number) {
     description: 'Reddit Opportunity Intelligence — scored startup ideas, market signals, and buyer intent from Reddit.',
     icon: 'https://raw.githubusercontent.com/Houseofmvps/reddit-intel-agent-mcp/main/logo.png',
     publisher: 'houseofmvps',
-    homepage: 'https://github.com/Houseofmvps/reddit-intel-agent-mcp',
+    homepage: 'https://buildradar.xyz',
     license: 'MIT',
     runtime: 'node',
     transport: ['stdio', 'streamable-http', 'sse'],

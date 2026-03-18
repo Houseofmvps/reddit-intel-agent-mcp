@@ -150,18 +150,17 @@ Every tool is free. No signup required. No API key needed.
 
 We built this for indie hackers, founders, and small teams. Everyone gets access to everything.
 
-| | Free | Pro ($9/mo) | Team ($29/mo) |
-|---|---|---|---|
-| **All 14 tools** | Yes | Yes | Yes |
-| **Results per query** | 10 | Unlimited | Unlimited |
-| **Scoring & signals** | Basic | Full breakdowns | Full breakdowns |
-| **Clustering analysis** | - | Yes | Yes |
-| **Opportunity hints** | - | Yes | Yes |
-| **Evidence packs** | Yes | Yes | Yes |
-| **API keys** | 1 | 1 | 5 |
-| **Support** | GitHub Issues | Email | Priority |
+| | Free | Pro ($7.99/mo) |
+|---|---|---|
+| **All 14 tools** | Yes | Yes |
+| **Results per query** | 10 | Unlimited |
+| **Scoring & signals** | Basic | Full breakdowns |
+| **Clustering analysis** | - | Yes |
+| **Opportunity hints** | - | Yes |
+| **Evidence packs** | Yes | Yes |
+| **Support** | GitHub Issues | Email |
 
-**Pro is less than the price of two coffees.** Set it up in 30 seconds:
+**Pro costs less than two coffees per month.** Get it at [buildradar.xyz](https://buildradar.xyz). Set it up in 30 seconds:
 
 ```bash
 export REDDIT_INTEL_TIER=pro
