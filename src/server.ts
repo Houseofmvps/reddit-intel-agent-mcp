@@ -265,7 +265,7 @@ export async function startHttp(port: number) {
         const authHandler = toNodeHandler(auth);
         await authHandler(req, res);
       } catch (err) {
-        // Auth not configured (no DATABASE_URL) — skip silently
+        console.error('[auth] Error handling auth request:', err);
         if (!res.writableEnded) {
           res.writeHead(503, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: 'Auth service not available' }));

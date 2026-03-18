@@ -26,12 +26,16 @@ function createAuth() {
       enabled: true,
       requireEmailVerification: false,
     },
-    socialProviders: {
-      github: {
-        clientId: process.env.GITHUB_CLIENT_ID!,
-        clientSecret: process.env.GITHUB_CLIENT_SECRET!,
-      },
-    },
+    ...(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET
+      ? {
+          socialProviders: {
+            github: {
+              clientId: process.env.GITHUB_CLIENT_ID,
+              clientSecret: process.env.GITHUB_CLIENT_SECRET,
+            },
+          },
+        }
+      : {}),
     plugins: [
       magicLink({
         sendMagicLink: async ({ email, url }) => {
