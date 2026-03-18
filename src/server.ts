@@ -175,9 +175,15 @@ export async function startHttp(port: number) {
   }
 
   // ─── Base URL for manifests ─────────────────────────────────
+  // Try explicit env, then Railway's auto-injected public domain, then fallback to localhost
   const rawBaseUrl = process.env.REDDIT_INTEL_BASE_URL?.trim();
-  const baseUrl = rawBaseUrl && rawBaseUrl.length > 0 ? rawBaseUrl.replace(/\/+$/, '') : `http://localhost:${port}`;
-  console.error(`\x1b[36m[reddit-intel]\x1b[0m Base URL: ${baseUrl} (env: ${process.env.REDDIT_INTEL_BASE_URL ?? 'not set'})`);
+  const railwayDomain = process.env.RAILWAY_PUBLIC_DOMAIN?.trim();
+  const baseUrl = (rawBaseUrl && rawBaseUrl.length > 0)
+    ? rawBaseUrl.replace(/\/+$/, '')
+    : railwayDomain
+      ? `https://${railwayDomain}`
+      : `http://localhost:${port}`;
+  console.error(`\x1b[36m[reddit-intel]\x1b[0m Base URL: ${baseUrl}`);
 
   // ─── OpenAI plugin manifest ────────────────────────────────
   const aiPluginManifest = {
