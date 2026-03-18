@@ -149,11 +149,11 @@ if (args.includes('--auth') || args.includes('-a')) {
     REDDIT_INTEL_LICENSE_KEY    License key for Pro/Team
 
   Integrations:
-    Claude Desktop: Add to claude_desktop_config.json with "npx reddit-intelligence-agent-mcp"
-    Claude Code:    claude mcp add --transport stdio reddit-intel -s user -- npx -y reddit-intelligence-agent-mcp
+    Claude Desktop: Add to claude_desktop_config.json with "npx reddit-intel-agent-mcp"
+    Claude Code:    claude mcp add --transport stdio reddit-intel -s user -- npx -y reddit-intel-agent-mcp
     ChatGPT:        Start with --http, use /api/openapi.json for custom GPT Actions
     Gemini:         Start with --http, use /api/tools/* REST endpoints
-    Any MCP client: Use stdio transport with "npx reddit-intelligence-agent-mcp"
+    Any MCP client: Use stdio transport with "npx reddit-intel-agent-mcp"
 `);
 } else if (args.includes('--version') || args.includes('-v')) {
   console.log(`reddit-intelligence-agent v${SERVER_VERSION}`);

@@ -1,11 +1,11 @@
 {
-  "name": "reddit-intelligence-agent-mcp",
+  "name": "reddit-intel-agent-mcp",
   "version": "0.1.0",
   "description": "Reddit Opportunity Intelligence — scored startup ideas, market signals, and buyer intent from Reddit. MCP + REST dual-protocol server.",
   "main": "dist/index.js",
   "bin": {
     "reddit-intel": "./dist/cli.js",
-    "reddit-intelligence-agent-mcp": "./dist/cli.js"
+    "reddit-intel-agent-mcp": "./dist/cli.js"
   },
   "type": "module",
   "scripts": {
@@ -19,8 +19,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --ext .ts",
     "prepublishOnly": "npm run build",
-    "docker:build": "docker build -t reddit-intelligence-agent-mcp .",
-    "docker:run": "docker run -p 3000:3000 -e REDDIT_INTEL_HTTP=true reddit-intelligence-agent-mcp"
+    "docker:build": "docker build -t reddit-intel-agent-mcp .",
+    "docker:run": "docker run -p 3000:3000 -e REDDIT_INTEL_HTTP=true reddit-intel-agent-mcp"
   },
   "keywords": [
     "reddit",
@@ -35,11 +35,11 @@
     "chatgpt",
     "gemini"
   ],
-  "author": "thekingofmeta",
+  "author": "houseofmvps",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/thekingofmeta/reddit-intelligence-agent-mcp"
+    "url": "https://github.com/Houseofmvps/reddit-intel-agent-mcp"
   },
   "engines": {
     "node": ">=18.0.0"

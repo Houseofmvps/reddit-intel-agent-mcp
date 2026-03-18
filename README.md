@@ -21,7 +21,7 @@ A dual-protocol server (MCP + REST API) that turns Reddit into an actionable int
 ## Quick Start
 
 ```bash
-npx reddit-intelligence-agent-mcp
+npx reddit-intel-agent-mcp
 ```
 
 No API key required. Works immediately with anonymous Reddit access (10 req/min).
@@ -29,7 +29,7 @@ No API key required. Works immediately with anonymous Reddit access (10 req/min)
 ### Higher Rate Limits (Optional)
 
 ```bash
-npx reddit-intelligence-agent-mcp --auth
+npx reddit-intel-agent-mcp --auth
 ```
 
 Follow the prompts to add Reddit API credentials:
@@ -47,7 +47,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
   "mcpServers": {
     "reddit-intel": {
       "command": "npx",
-      "args": ["-y", "reddit-intelligence-agent-mcp"]
+      "args": ["-y", "reddit-intel-agent-mcp"]
     }
   }
 }
@@ -56,13 +56,13 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 ### Claude Code
 
 ```bash
-claude mcp add --transport stdio reddit-intel -s user -- npx -y reddit-intelligence-agent-mcp
+claude mcp add --transport stdio reddit-intel -s user -- npx -y reddit-intel-agent-mcp
 ```
 
 ### ChatGPT (Custom GPT Actions)
 
 ```bash
-npx reddit-intelligence-agent-mcp --http
+npx reddit-intel-agent-mcp --http
 # Server starts on http://localhost:3000
 # Import OpenAPI spec from http://localhost:3000/api/openapi.json
 ```
@@ -70,7 +70,7 @@ npx reddit-intelligence-agent-mcp --http
 ### Gemini Extensions
 
 ```bash
-npx reddit-intelligence-agent-mcp --http
+npx reddit-intel-agent-mcp --http
 # Use REST endpoints at http://localhost:3000/api/tools/*
 ```
 
@@ -156,8 +156,8 @@ docker run -p 3000:3000 -e REDDIT_INTEL_HTTP=true reddit-intel
 ## Development
 
 ```bash
-git clone https://github.com/your-org/reddit-intelligence-agent-mcp.git
-cd reddit-intelligence-agent-mcp
+git clone https://github.com/Houseofmvps/reddit-intel-agent-mcp.git
+cd reddit-intel-agent-mcp
 npm install
 npm run build
 npm test
