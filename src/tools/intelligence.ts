@@ -99,12 +99,12 @@ export class IntelligenceTools {
   // ─── detect_workarounds ───────────────────────────────────────
 
   async detectWorkarounds(params: z.infer<typeof detectWorkaroundsSchema>) {
-    const safeDomain = params.domain.replace(/"/g, '');
+    const dom = this.smartQuote(params.domain);
     const queries = [
-      `"${safeDomain}" workaround`,
-      `"${safeDomain}" hack`,
-      `"${safeDomain}" built my own`,
-      `"${safeDomain}" spreadsheet`,
+      `${dom} workaround`,
+      `${dom} hack`,
+      `${dom} built my own`,
+      `${dom} spreadsheet`,
     ];
 
     const allPosts: RedditPost[] = [];
@@ -316,10 +316,11 @@ export class IntelligenceTools {
   // ─── extract_feature_gaps (Pro) ───────────────────────────────
 
   async extractFeatureGaps(params: z.infer<typeof extractFeatureGapsSchema>) {
+    const prod = this.smartQuote(params.product);
     const queries = [
-      `"${params.product.replace(/"/g, '')}" "feature request"`,
-      `"${params.product.replace(/"/g, '')}" "wish" OR "should have" OR "why can't"`,
-      `"${params.product.replace(/"/g, '')}" missing OR lacks`,
+      `${prod} "feature request"`,
+      `${prod} "wish" OR "should have" OR "why can't"`,
+      `${prod} missing OR lacks`,
     ];
 
     const allPosts: RedditPost[] = [];
@@ -373,10 +374,11 @@ export class IntelligenceTools {
   // ─── track_pricing_objections (Pro) ───────────────────────────
 
   async trackPricingObjections(params: z.infer<typeof trackPricingObjectionsSchema>) {
+    const prod = this.smartQuote(params.product);
     const queries = [
-      `"${params.product.replace(/"/g, '')}" "too expensive" OR "overpriced" OR "not worth"`,
-      `"${params.product.replace(/"/g, '')}" pricing OR price OR cost`,
-      `"${params.product.replace(/"/g, '')}" "free alternative" OR "open source alternative"`,
+      `${prod} "too expensive" OR "overpriced" OR "not worth"`,
+      `${prod} pricing OR price OR cost`,
+      `${prod} "free alternative" OR "open source alternative"`,
     ];
 
     const allPosts: RedditPost[] = [];
@@ -429,10 +431,11 @@ export class IntelligenceTools {
   // ─── find_buyer_intent (Pro) ──────────────────────────────────
 
   async findBuyerIntent(params: z.infer<typeof findBuyerIntentSchema>) {
+    const cat = this.smartQuote(params.solution_category);
     const queries = [
-      `"${params.solution_category.replace(/"/g, '')}" "looking for" OR "recommend" OR "need a"`,
-      `"${params.solution_category.replace(/"/g, '')}" "best" OR "which" OR "suggestions"`,
-      `"${params.solution_category.replace(/"/g, '')}" "willing to pay" OR "budget"`,
+      `${cat} "looking for" OR "recommend" OR "need a"`,
+      `${cat} "best" OR "which" OR "suggestions"`,
+      `${cat} "willing to pay" OR "budget"`,
     ];
 
     const allPosts: RedditPost[] = [];
@@ -541,6 +544,17 @@ export class IntelligenceTools {
   }
 
   // ─── Helpers ──────────────────────────────────────────────────
+
+  /**
+   * Smart-quote a user-supplied category/description for Reddit search.
+   * Short phrases (1-3 words) get quoted for precision.
+   * Longer inputs stay unquoted so Reddit treats them as keyword search.
+   */
+  private smartQuote(input: string): string {
+    const cleaned = input.replace(/"/g, '').trim();
+    const wordCount = cleaned.split(/\s+/).length;
+    return wordCount <= 3 ? `"${cleaned}"` : cleaned;
+  }
 
   private async gatherPosts(query: string, subreddits: string[], time: string, limit: number): Promise<RedditPost[]> {
     if (subreddits.length === 0) {
