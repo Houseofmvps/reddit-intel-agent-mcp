@@ -7,6 +7,7 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { createServer, type IncomingMessage, type ServerResponse } from 'http';
@@ -129,45 +130,166 @@ export async function startStdio() {
 export async function startHttp(port: number) {
   const { server, cache, registry, tier } = await createIntelServer();
 
-  const transport = new StreamableHTTPServerTransport({
+  // ─── Streamable HTTP transport (modern MCP) ────────────────
+  const streamableTransport = new StreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
     enableJsonResponse: false,
   });
-  await server.connect(transport);
+  await server.connect(streamableTransport);
+
+  // ─── SSE transport sessions (legacy MCP clients) ───────────
+  const sseSessions = new Map<string, SSEServerTransport>();
+
+  // Helper: create a new MCP server instance for SSE sessions
+  async function createSSESession() {
+    const sseServer = new Server(
+      { name: SERVER_NAME, version: SERVER_VERSION },
+      { capabilities: { tools: {}, prompts: {} } },
+    );
+    sseServer.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: registry.listTools() }));
+    sseServer.setRequestHandler(CallToolRequestSchema, async (request) => {
+      const { name, arguments: args } = request.params;
+      const { result, isError } = await registry.callTool(name, args, tier);
+      return makeResponse(result, isError);
+    });
+    return sseServer;
+  }
+
+  // ─── OpenAI plugin manifest ────────────────────────────────
+  const aiPluginManifest = {
+    schema_version: 'v1',
+    name_for_human: 'Reddit Intelligence Agent',
+    name_for_model: 'reddit_intelligence',
+    description_for_human: 'Get scored startup ideas, market signals, and buyer intent from Reddit.',
+    description_for_model: 'Search and analyze Reddit for startup opportunities, pain points, competitor intelligence, buyer intent signals, and market gaps. Returns scored, structured data with source URLs.',
+    auth: { type: 'none' },
+    api: {
+      type: 'openapi',
+      url: `http://localhost:${port}/api/openapi.json`,
+    },
+    logo_url: `http://localhost:${port}/logo.png`,
+    contact_email: 'support@houseofmvps.com',
+    legal_info_url: 'https://github.com/Houseofmvps/reddit-intel-agent-mcp/blob/main/LICENSE',
+  };
+
+  // ─── Smithery manifest ────────────────────────────────────
+  const smitheryManifest = {
+    name: 'reddit-intel-agent-mcp',
+    display_name: 'Reddit Intelligence Agent',
+    description: 'Reddit Opportunity Intelligence — scored startup ideas, market signals, and buyer intent from Reddit.',
+    icon: 'https://raw.githubusercontent.com/Houseofmvps/reddit-intel-agent-mcp/main/logo.png',
+    publisher: 'houseofmvps',
+    homepage: 'https://github.com/Houseofmvps/reddit-intel-agent-mcp',
+    license: 'MIT',
+    runtime: 'node',
+    transport: ['stdio', 'streamable-http', 'sse'],
+    tools: registry.listTools().map(t => ({
+      name: t.name,
+      description: t.description,
+    })),
+  };
 
   const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
+    // ─── CORS (all routes) ──────────────────────────────────
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept, MCP-Session-Id, Authorization');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept, MCP-Session-Id, Authorization, Cache-Control');
     res.setHeader('Access-Control-Expose-Headers', 'MCP-Session-Id');
 
     if (req.method === 'OPTIONS') { res.writeHead(200); res.end(); return; }
 
-    // ─── REST API routes (/api/*) ─────────────────────────────
+    const url = (req.url ?? '').split('?')[0];
+
+    // ─── REST API routes (/api/*) ───────────────────────────
     if (handleRestRequest(req, res, registry, tier)) return;
 
-    // ─── Health check ─────────────────────────────────────────
-    if (req.url === '/health' && req.method === 'GET') {
+    // ─── Health check ───────────────────────────────────────
+    if (url === '/health' && req.method === 'GET') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         status: 'ok',
         server: SERVER_NAME,
         version: SERVER_VERSION,
         tier,
-        protocol: ['mcp', 'rest'],
+        protocol: ['mcp-stdio', 'mcp-streamable-http', 'mcp-sse', 'rest'],
+        endpoints: {
+          mcp_streamable: '/mcp',
+          mcp_sse: '/sse',
+          mcp_sse_messages: '/messages',
+          rest_tools: '/api/tools',
+          rest_prompts: '/api/prompts',
+          openapi_spec: '/api/openapi.json',
+          openai_plugin: '/.well-known/ai-plugin.json',
+        },
       }));
       return;
     }
 
-    // ─── Root ─────────────────────────────────────────────────
-    if (req.url === '/' && req.method === 'GET') {
-      res.writeHead(200, { 'Content-Type': 'text/plain' });
-      res.end(`Reddit Intelligence Agent v${SERVER_VERSION}\nMCP: POST /mcp\nREST: /api/tools\nHealth: /health\n`);
+    // ─── OpenAI Plugin Manifest ─────────────────────────────
+    if (url === '/.well-known/ai-plugin.json' && req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(aiPluginManifest, null, 2));
       return;
     }
 
-    // ─── MCP endpoint ─────────────────────────────────────────
-    if (req.url === '/mcp') {
+    // ─── Smithery Manifest ──────────────────────────────────
+    if (url === '/.well-known/smithery.json' && req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(smitheryManifest, null, 2));
+      return;
+    }
+
+    // ─── MCP Server Metadata (for auto-discovery) ───────────
+    if (url === '/.well-known/mcp.json' && req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        name: SERVER_NAME,
+        version: SERVER_VERSION,
+        description: 'Reddit Opportunity Intelligence — scored startup ideas, market signals, and buyer intent.',
+        transports: {
+          'streamable-http': { url: '/mcp' },
+          'sse': { url: '/sse', messages_url: '/messages' },
+        },
+        tools_count: registry.listTools().length,
+        documentation: 'https://github.com/Houseofmvps/reddit-intel-agent-mcp',
+      }));
+      return;
+    }
+
+    // ─── Root ───────────────────────────────────────────────
+    if (url === '/' && req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        name: 'Reddit Intelligence Agent',
+        version: SERVER_VERSION,
+        description: 'Reddit Opportunity Intelligence — MCP + REST dual-protocol server.',
+        endpoints: {
+          mcp_streamable_http: 'POST /mcp',
+          mcp_sse: 'GET /sse (stream) + POST /messages (send)',
+          rest_api: '/api/tools, /api/tools/:name, /api/prompts',
+          openapi_spec: '/api/openapi.json',
+          openai_plugin: '/.well-known/ai-plugin.json',
+          smithery: '/.well-known/smithery.json',
+          mcp_discovery: '/.well-known/mcp.json',
+          health: '/health',
+        },
+        integration: {
+          claude_desktop: 'npx reddit-intel-agent-mcp',
+          claude_code: 'claude mcp add --transport stdio reddit-intel -s user -- npx -y reddit-intel-agent-mcp',
+          chatgpt: 'Import /.well-known/ai-plugin.json as Custom GPT Action',
+          gemini: 'Use /api/tools/* REST endpoints',
+          cursor: 'Add MCP server in settings → MCP',
+          windsurf: 'Add MCP server in settings',
+          smithery: 'npx -y @smithery/cli install reddit-intel-agent-mcp',
+          any_mcp_client: 'POST /mcp (StreamableHTTP) or GET /sse + POST /messages (SSE)',
+          any_http_client: 'POST /api/tools/:name with JSON body',
+        },
+      }));
+      return;
+    }
+
+    // ─── MCP Streamable HTTP endpoint ───────────────────────
+    if (url === '/mcp') {
       if (req.method === 'POST') {
         let body = '';
         const bodyTimer = setTimeout(() => {
@@ -190,7 +312,7 @@ export async function startHttp(port: number) {
           clearTimeout(bodyTimer);
           try {
             const parsed = JSON.parse(body);
-            await transport.handleRequest(req, res, parsed);
+            await streamableTransport.handleRequest(req, res, parsed);
           } catch {
             res.writeHead(400, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ jsonrpc: '2.0', error: { code: -32700, message: 'Parse error' }, id: null }));
@@ -199,8 +321,60 @@ export async function startHttp(port: number) {
 
         req.on('error', () => clearTimeout(bodyTimer));
       } else {
-        await transport.handleRequest(req, res);
+        await streamableTransport.handleRequest(req, res);
       }
+      return;
+    }
+
+    // ─── MCP SSE endpoint (legacy transport) ────────────────
+    // GET /sse — establish SSE stream (for Cursor, Cline, older MCP clients)
+    if (url === '/sse' && req.method === 'GET') {
+      const sseTransport = new SSEServerTransport('/messages', res);
+      const sessionId = sseTransport.sessionId;
+      sseSessions.set(sessionId, sseTransport);
+
+      const sseServer = await createSSESession();
+      await sseServer.connect(sseTransport);
+
+      sseTransport.onclose = () => {
+        sseSessions.delete(sessionId);
+      };
+      await sseTransport.start();
+      return;
+    }
+
+    // POST /messages?sessionId=xxx — send message to SSE session
+    if (url === '/messages' && req.method === 'POST') {
+      const fullUrl = req.url ?? '';
+      const queryStr = fullUrl.includes('?') ? fullUrl.split('?')[1] : '';
+      const params = new URLSearchParams(queryStr);
+      const sessionId = params.get('sessionId');
+
+      if (!sessionId || !sseSessions.has(sessionId)) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Invalid or missing sessionId' }));
+        return;
+      }
+
+      const sseTransport = sseSessions.get(sessionId)!;
+      let body = '';
+      req.on('data', chunk => {
+        body += chunk;
+        if (body.length > 10 * 1024 * 1024) {
+          res.writeHead(413, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Payload too large' }));
+          req.destroy();
+        }
+      });
+      req.on('end', async () => {
+        try {
+          const parsed = JSON.parse(body);
+          await sseTransport.handlePostMessage(req, res, parsed);
+        } catch {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Invalid JSON' }));
+        }
+      });
       return;
     }
 
@@ -212,6 +386,11 @@ export async function startHttp(port: number) {
   const cleanup = () => {
     if (exiting) return;
     exiting = true;
+    // Close all SSE sessions
+    for (const [, transport] of sseSessions) {
+      transport.close().catch(() => {});
+    }
+    sseSessions.clear();
     httpServer.close(() => { cache.destroy(); process.exit(0); });
     setTimeout(() => { cache.destroy(); process.exit(1); }, 10_000);
   };
@@ -231,8 +410,11 @@ export async function startHttp(port: number) {
 
   httpServer.listen(port, () => {
     console.error(`\x1b[32m[reddit-intel]\x1b[0m Running (HTTP mode)`);
-    console.error(`\x1b[32m[reddit-intel]\x1b[0m MCP:  http://localhost:${port}/mcp`);
-    console.error(`\x1b[32m[reddit-intel]\x1b[0m REST: http://localhost:${port}/api/tools`);
-    console.error(`\x1b[32m[reddit-intel]\x1b[0m Spec: http://localhost:${port}/api/openapi.json`);
+    console.error(`\x1b[32m[reddit-intel]\x1b[0m MCP Streamable: http://localhost:${port}/mcp`);
+    console.error(`\x1b[32m[reddit-intel]\x1b[0m MCP SSE:        http://localhost:${port}/sse`);
+    console.error(`\x1b[32m[reddit-intel]\x1b[0m REST API:       http://localhost:${port}/api/tools`);
+    console.error(`\x1b[32m[reddit-intel]\x1b[0m OpenAPI Spec:   http://localhost:${port}/api/openapi.json`);
+    console.error(`\x1b[32m[reddit-intel]\x1b[0m OpenAI Plugin:  http://localhost:${port}/.well-known/ai-plugin.json`);
+    console.error(`\x1b[32m[reddit-intel]\x1b[0m MCP Discovery:  http://localhost:${port}/.well-known/mcp.json`);
   });
 }

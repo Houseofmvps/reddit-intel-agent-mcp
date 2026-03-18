@@ -1,0 +1,27 @@
+# Smithery.ai MCP Registry Configuration
+# https://smithery.ai/docs/config
+
+startCommand:
+  type: stdio
+  configSchema:
+    type: object
+    properties:
+      REDDIT_INTEL_CLIENT_ID:
+        type: string
+        description: Reddit app client ID (optional, for higher rate limits)
+      REDDIT_INTEL_CLIENT_SECRET:
+        type: string
+        description: Reddit app client secret (optional)
+      REDDIT_INTEL_TIER:
+        type: string
+        enum: [free, pro, team]
+        default: free
+        description: Product tier
+  command: npx
+  args:
+    - "-y"
+    - "reddit-intel-agent-mcp"
+  env:
+    REDDIT_INTEL_CLIENT_ID: "{{config.REDDIT_INTEL_CLIENT_ID}}"
+    REDDIT_INTEL_CLIENT_SECRET: "{{config.REDDIT_INTEL_CLIENT_SECRET}}"
+    REDDIT_INTEL_TIER: "{{config.REDDIT_INTEL_TIER}}"

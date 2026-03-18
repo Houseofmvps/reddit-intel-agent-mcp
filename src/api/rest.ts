@@ -112,7 +112,7 @@ function generateOpenAPISpec(tools: Array<{ name: string; description?: string; 
     paths[`/api/tools/${tool.name}`] = {
       post: {
         operationId: tool.name,
-        summary: tool.description,
+        summary: tool.description ?? tool.name,
         requestBody: {
           required: true,
           content: {
@@ -129,14 +129,19 @@ function generateOpenAPISpec(tools: Array<{ name: string; description?: string; 
     };
   }
 
+  const port = process.env.REDDIT_INTEL_PORT ?? '3000';
+  const baseUrl = process.env.REDDIT_INTEL_BASE_URL ?? `http://localhost:${port}`;
+
   return {
     openapi: '3.1.0',
     info: {
       title: 'Reddit Intelligence Agent',
       version: '0.1.0',
-      description: 'Reddit Opportunity Intelligence — scored startup ideas, market signals, and buyer intent from Reddit.',
+      description: 'Reddit Opportunity Intelligence — scored startup ideas, market signals, and buyer intent from Reddit. Provides 13 tools across three pillars: Idea Mining, Market Intelligence, and Lead Generation.',
     },
-    servers: [{ url: 'http://localhost:3000' }],
+    servers: [
+      { url: baseUrl, description: 'Reddit Intelligence Agent API' },
+    ],
     paths,
   };
 }
