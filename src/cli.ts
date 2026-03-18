@@ -133,7 +133,7 @@ if (args.includes('--auth') || args.includes('-a')) {
   Reddit Intelligence Agent v${SERVER_VERSION}
   Reddit Opportunity Intelligence — scored startup ideas, market signals, and buyer intent.
 
-  All 14 tools are FREE. Pro ($9.99/mo) unlocks unlimited results & full scoring.
+  All 14 tools are FREE. Pro ($14.99/mo) unlocks unlimited results & full scoring.
   https://buildradar.xyz
 
   Usage:
