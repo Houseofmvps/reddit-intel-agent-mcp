@@ -1,10 +1,70 @@
-# Reddit Intelligence Agent MCP
+# BuildRadar — Reddit Intelligence Agent MCP
 
-Turn Reddit into scored startup ideas, market signals, and buyer intent — right inside your AI assistant.
+**Turn Reddit into scored startup ideas, market signals, and buyer intent — right inside your AI assistant.**
 
-**All 14 tools are FREE.** Works with Claude, ChatGPT, Gemini, Cursor, Windsurf, and any MCP client.
+[![npm version](https://img.shields.io/npm/v/reddit-intel-agent-mcp.svg)](https://www.npmjs.com/package/reddit-intel-agent-mcp)
+[![npm downloads](https://img.shields.io/npm/dm/reddit-intel-agent-mcp.svg)](https://www.npmjs.com/package/reddit-intel-agent-mcp)
+[![GitHub stars](https://img.shields.io/github/stars/Houseofmvps/reddit-intel-agent-mcp.svg)](https://github.com/Houseofmvps/reddit-intel-agent-mcp)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-## Quick Start (2 minutes)
+All 14 tools are **FREE**. No signup. No API keys. Works with Claude, ChatGPT, Gemini, Cursor, Windsurf, and any MCP client.
+
+---
+
+## See It In Action
+
+![BuildRadar Demo](assets/images/buildradar-demo.gif)
+
+> **What you're seeing above:**
+>
+> 1. **Claude finding 12 validated startup ideas** from r/startups pain points — each scored 0-100 with severity ratings and evidence links
+> 2. **Claude tracking competitor sentiment** for Notion vs Coda — switching intent signals, pricing objections, and feature gap analysis side by side
+> 3. **Claude detecting buyer intent** in r/smallbusiness — surfacing 8 people actively looking to purchase CRM tools, with urgency and budget hints
+
+---
+
+## What Makes BuildRadar Different?
+
+- **14 tools, not 5.** Competitors give you basic Reddit browsing. BuildRadar gives you a full intelligence suite: pain point detection, opportunity scoring, buyer intent, competitor tracking, ICP building, and evidence export.
+- **Intelligence scoring (0-100 opportunity scores).** Not fake sentiment analysis. Real scoring based on pain frequency, severity, workaround prevalence, competition weakness, recency, and subreddit quality.
+- **Buyer intent detection + lead generation.** Find people who are actively looking to buy a solution in your category. Get urgency ratings, budget hints, and signal breakdowns.
+- **All 14 tools are FREE.** No signup, no API keys, no trial period. Install in 30 seconds and start querying.
+- **Works everywhere.** Claude Desktop, Claude Code, Cursor, Windsurf, ChatGPT (via Custom GPTs), Gemini (via REST), or any MCP-compatible client. Stdio, StreamableHTTP, SSE, and REST — all supported.
+- **Open source, self-hostable, MIT license.** Run it on your machine, deploy to Railway, Docker, or any server. Audit every line of code.
+
+---
+
+## Table of Contents
+
+- [Quick Start (30 Seconds)](#quick-start-30-seconds)
+  - [Claude Desktop](#claude-desktop)
+  - [Claude Code](#claude-code)
+  - [Cursor](#cursor)
+  - [Windsurf](#windsurf)
+  - [ChatGPT](#chatgpt-custom-gpt)
+  - [Gemini](#gemini)
+  - [Any MCP Client](#any-mcp-client)
+  - [Any HTTP Client](#any-http-client)
+- [What Can You Do?](#what-can-you-do)
+- [All 14 Tools](#all-14-tools)
+  - [Retrieval Tools](#retrieval-tools)
+  - [Intelligence Tools](#intelligence-tools)
+  - [Export Tools](#export-tools)
+- [Three Pillars](#three-pillars)
+- [Authentication (Optional)](#authentication-optional)
+- [Pricing (Founder-Friendly)](#pricing-founder-friendly)
+- [Comparison with Other Tools](#comparison-with-other-tools)
+- [Production Deployment](#production-deployment)
+- [Security & Privacy](#security--privacy)
+- [Protocols Supported](#protocols-supported)
+- [Environment Variables](#environment-variables)
+- [Troubleshooting](#troubleshooting)
+- [Development](#development)
+- [Support](#support)
+
+---
+
+## Quick Start (30 Seconds)
 
 ### Claude Desktop
 
@@ -24,17 +84,21 @@ Turn Reddit into scored startup ideas, market signals, and buyer intent — righ
 ```
 
 4. Restart Claude Desktop
-5. You'll see "reddit-intel" in the tools menu. Try asking: *"Search Reddit for pain points about project management tools"*
+5. You'll see "reddit-intel" in the tools menu. Try asking:
+
+> *"Find pain points about project management tools on Reddit"*
 
 ### Claude Code
 
-Run this one command in your terminal:
+One command. That's it.
 
 ```bash
 claude mcp add --transport stdio reddit-intel -s user -- npx -y reddit-intel-agent-mcp
 ```
 
-Done. Now ask Claude Code: *"Find buyer intent for CRM tools on Reddit"*
+Now ask Claude Code anything:
+
+> *"Find buyer intent for CRM tools on Reddit"*
 
 ### Cursor
 
@@ -49,58 +113,92 @@ Done. Now ask Claude Code: *"Find buyer intent for CRM tools on Reddit"*
 
 1. Open Windsurf
 2. Go to **Settings** > **MCP Servers**
-3. Add server with command: `npx -y reddit-intel-agent-mcp`
+3. Add a new server with command: `npx -y reddit-intel-agent-mcp`
+4. Restart Windsurf
 
 ### ChatGPT (Custom GPT)
 
+BuildRadar works with ChatGPT through the Custom GPT Actions system.
+
 1. Go to [chat.openai.com](https://chat.openai.com) > **Explore GPTs** > **Create**
 2. Click **Configure** > **Actions** > **Import from URL**
-3. Enter: `https://api.buildradar.xyz/.well-known/ai-plugin.json`
-4. Save and use your custom GPT
+3. Enter:
+   ```
+   https://api.buildradar.xyz/.well-known/ai-plugin.json
+   ```
+4. Save and use your Custom GPT
 
-Or self-host: `npx reddit-intel-agent-mcp --http` and use `http://localhost:3000/.well-known/ai-plugin.json`
+To self-host instead:
+
+```bash
+npx reddit-intel-agent-mcp --http
+# Then import from: http://localhost:3000/.well-known/ai-plugin.json
+```
 
 ### Gemini
 
-Use the hosted REST endpoints:
+Use the hosted REST API endpoints directly:
+
 ```bash
-# List all tools
+# List all available tools
 curl https://api.buildradar.xyz/api/tools
 
-# Call a tool
-curl -X POST https://api.buildradar.xyz/api/tools/search_reddit \
+# Search Reddit for pain points
+curl -X POST https://api.buildradar.xyz/api/tools/find_pain_points \
   -H "Content-Type: application/json" \
-  -d '{"query": "best CRM for startups", "subreddits": ["startups", "SaaS"]}'
+  -d '{"query": "project management", "subreddits": ["startups", "SaaS"]}'
+
+# Score a startup idea
+curl -X POST https://api.buildradar.xyz/api/tools/score_opportunity \
+  -H "Content-Type: application/json" \
+  -d '{"idea": "AI meal planning app", "subreddits": ["cooking", "mealprep"]}'
+
+# Find buyer intent
+curl -X POST https://api.buildradar.xyz/api/tools/find_buyer_intent \
+  -H "Content-Type: application/json" \
+  -d '{"solution_category": "CRM software", "subreddits": ["smallbusiness"]}'
 ```
 
-Or self-host: `npx reddit-intel-agent-mcp --http` and use `http://localhost:3000/api/tools`
+To self-host:
+
+```bash
+npx reddit-intel-agent-mcp --http
+# Then use http://localhost:3000/api/tools/:name
+```
 
 ### Any MCP Client
 
 ```bash
-# Option 1: stdio (most common)
+# Option 1: stdio (most common — Claude Desktop, Claude Code, Cursor, Windsurf, Cline)
 npx reddit-intel-agent-mcp
 
-# Option 2: Hosted StreamableHTTP
+# Option 2: Hosted StreamableHTTP (modern MCP spec)
 # Connect to: https://api.buildradar.xyz/mcp
 
-# Option 3: Hosted SSE (legacy)
+# Option 3: Hosted SSE (legacy MCP clients)
 # SSE stream: GET https://api.buildradar.xyz/sse
 # Send messages: POST https://api.buildradar.xyz/messages?sessionId=xxx
 
-# Option 4: Self-host
+# Option 4: Self-host any protocol
 npx reddit-intel-agent-mcp --http
 # StreamableHTTP: http://localhost:3000/mcp
 # SSE: http://localhost:3000/sse
+# REST: http://localhost:3000/api/tools/:name
 ```
 
-### Any HTTP Client (Perplexity, Grok, custom apps)
+### Any HTTP Client
+
+Works with Perplexity, Grok, custom apps, or plain `curl`:
 
 ```bash
-# Use the hosted API
-curl -X POST https://api.buildradar.xyz/api/tools/find_pain_points \
+# Use the hosted API — no setup required
+curl -X POST https://api.buildradar.xyz/api/tools/search_reddit \
   -H "Content-Type: application/json" \
-  -d '{"query": "email marketing", "subreddits": ["startups", "Entrepreneur"]}'
+  -d '{"query": "best CRM for startups", "subreddits": ["startups", "SaaS"]}'
+
+curl -X POST https://api.buildradar.xyz/api/tools/monitor_competitors \
+  -H "Content-Type: application/json" \
+  -d '{"competitors": ["Notion", "Coda", "Obsidian"], "subreddits": ["productivity"]}'
 
 # Or self-host
 npx reddit-intel-agent-mcp --http
@@ -109,151 +207,699 @@ curl -X POST http://localhost:3000/api/tools/find_pain_points \
   -d '{"query": "email marketing", "subreddits": ["startups", "Entrepreneur"]}'
 ```
 
-## What You Can Do
+---
 
-### Ask your AI assistant things like:
+## What Can You Do?
 
-**Idea Validation**
-- *"Score the opportunity for an AI writing tool based on Reddit data"*
-- *"Find pain points about project management in r/startups and r/SaaS"*
-- *"What workarounds are people building for expense tracking?"*
+Ask your AI assistant naturally. BuildRadar maps your questions to the right tools automatically.
 
-**Market Research**
-- *"Monitor how people talk about Notion vs Coda on Reddit"*
-- *"What features are missing from Figma according to Reddit users?"*
-- *"Track pricing objections for Slack"*
+### Idea Mining
 
-**Lead Generation**
-- *"Find people on Reddit looking to buy a CRM tool"*
-- *"Build an ideal customer profile for developer tools from Reddit"*
-- *"Export an evidence pack of all the data you found"*
+| Ask this | Tool used |
+|----------|-----------|
+| *"Find validated SaaS ideas from r/startups pain points"* | `find_pain_points` |
+| *"What workarounds are people building for expense tracking?"* | `detect_workarounds` |
+| *"Score the opportunity for an AI writing assistant"* | `score_opportunity` |
+| *"What features are missing from Notion?"* | `extract_feature_gaps` |
+
+### Market Intelligence
+
+| Ask this | Tool used |
+|----------|-----------|
+| *"Track how people talk about Notion vs Coda"* | `monitor_competitors` |
+| *"What features are missing from Figma according to Reddit?"* | `extract_feature_gaps` |
+| *"Track pricing objections for Slack"* | `track_pricing_objections` |
+| *"Score the market opportunity for a Calendly competitor"* | `score_opportunity` |
+
+### Lead Generation
+
+| Ask this | Tool used |
+|----------|-----------|
+| *"Find people looking to buy a CRM tool"* | `find_buyer_intent` |
+| *"Build an ideal customer profile for developer tools"* | `build_icp` |
+| *"Export everything you found into a report"* | `export_evidence_pack` |
+
+### General Reddit
+
+| Ask this | Tool used |
+|----------|-----------|
+| *"What's trending on r/technology?"* | `browse_subreddit` |
+| *"Search Reddit for discussions about remote work tools"* | `search_reddit` |
+| *"Show me the top comments on this post"* | `post_details` |
+| *"Analyze u/spez's Reddit profile"* | `user_profile` |
+| *"Explain what karma and cake day mean"* | `reddit_explain` |
+
+---
 
 ## All 14 Tools
 
 Every tool is free. No signup required. No API key needed.
 
-| # | Tool | What it does |
-|---|------|-------------|
-| 1 | `browse_subreddit` | Browse posts from any subreddit with sorting |
-| 2 | `search_reddit` | Search across multiple subreddits at once |
-| 3 | `post_details` | Get full post + comments + extracted links |
-| 4 | `user_profile` | Analyze a Reddit user's activity and expertise |
-| 5 | `reddit_explain` | Explain Reddit terms and jargon (40+ terms) |
-| 6 | `find_pain_points` | Detect user frustrations with severity scoring |
-| 7 | `detect_workarounds` | Find DIY solutions = market gaps |
-| 8 | `score_opportunity` | 0-100 score for any startup idea |
-| 9 | `monitor_competitors` | Track competitor sentiment and switching intent |
-| 10 | `extract_feature_gaps` | Find features users want but don't have |
-| 11 | `track_pricing_objections` | Find pricing complaints and alternatives sought |
-| 12 | `find_buyer_intent` | Detect people actively looking to buy |
-| 13 | `build_icp` | Build Ideal Customer Profile from Reddit data |
-| 14 | `export_evidence_pack` | Export structured reports (JSON/Markdown) |
+### Retrieval Tools
 
-## Pricing (Founder-Friendly)
+These tools fetch data directly from Reddit.
 
-We built this for indie hackers, founders, and small teams. Everyone gets access to everything.
+#### `browse_subreddit`
 
-| | Free | Pro ($9.99/mo) |
-|---|---|---|
-| **All 14 tools** | Yes | Yes |
-| **Results per query** | 10 | Unlimited |
-| **Scoring & signals** | Basic | Full breakdowns |
-| **Clustering analysis** | - | Yes |
-| **Opportunity hints** | - | Yes |
-| **Evidence packs** | Yes | Yes |
-| **License key** | - | Via Polar.sh |
-| **Support** | GitHub Issues | Email |
+Browse posts from any subreddit with sorting and filtering options.
 
-**Pro costs less than two coffees per month.** Get it at [buildradar.xyz](https://buildradar.xyz). Set it up in 30 seconds:
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `subreddit` | string | Yes | — | Subreddit name without `r/` prefix. Use `"all"` for frontpage, `"popular"` for trending. |
+| `sort` | enum | No | `"hot"` | Sort order: `hot`, `new`, `top`, `rising`, `controversial` |
+| `time` | enum | No | — | Time filter for top/controversial: `hour`, `day`, `week`, `month`, `year`, `all` |
+| `limit` | number | No | 25 | Number of posts to return (1-100) |
+| `include_nsfw` | boolean | No | `false` | Include NSFW posts |
+| `include_subreddit_info` | boolean | No | `false` | Include subscriber count and subreddit description |
 
-```bash
-export REDDIT_INTEL_TIER=pro
-export REDDIT_INTEL_LICENSE_KEY=your-key-here
-```
+**Returns:** Post list with titles, scores, comment counts, authors, URLs, content, flair, and metadata.
 
-## Higher Rate Limits (Optional)
+---
 
-By default you get 10 Reddit requests/minute (no signup needed). Want faster?
+#### `search_reddit`
+
+Search across Reddit or specific subreddits with advanced filters.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `query` | string | Yes | — | Search query |
+| `subreddits` | string[] | No | all Reddit | Specific subreddits to search |
+| `sort` | enum | No | `"relevance"` | Sort: `relevance`, `hot`, `top`, `new`, `comments` |
+| `time` | enum | No | `"all"` | Time filter: `hour`, `day`, `week`, `month`, `year`, `all` |
+| `limit` | number | No | 25 | Results per subreddit (1-100) |
+| `author` | string | No | — | Filter by author username |
+| `flair` | string | No | — | Filter by post flair |
+
+**Returns:** Matching posts with content, scores, metadata, and source subreddits.
+
+---
+
+#### `post_details`
+
+Fetch a specific Reddit post with its full comment tree and extracted links.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `post_id` | string | No | — | Reddit post ID (e.g. `"abc123"`) |
+| `subreddit` | string | No | — | Subreddit name — more efficient when provided alongside `post_id` |
+| `url` | string | No | — | Full Reddit URL (alternative to `post_id`) |
+| `comment_limit` | number | No | 20 | Number of comments to return (1-500) |
+| `comment_sort` | enum | No | `"best"` | Comment sort: `best`, `top`, `new`, `controversial`, `qa` |
+| `comment_depth` | number | No | 3 | Maximum reply depth (1-10) |
+| `extract_links` | boolean | No | `false` | Extract URLs mentioned in comments |
+| `max_top_comments` | number | No | 5 | Number of top-level comments to include (1-50) |
+
+**Note:** Provide either `url` OR `post_id` — one is required.
+
+**Returns:** Full post content, comment tree with scores and authors, extracted links (if enabled).
+
+---
+
+#### `user_profile`
+
+Analyze a Reddit user's posting history, karma breakdown, and activity patterns.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `username` | string | Yes | — | Reddit username without `u/` prefix |
+| `posts_limit` | number | No | 10 | Number of recent posts to include (0-100) |
+| `comments_limit` | number | No | 10 | Number of recent comments to include (0-100) |
+| `time_range` | enum | No | `"month"` | Time range: `day`, `week`, `month`, `year`, `all` |
+| `top_subreddits_limit` | number | No | 10 | Number of most active subreddits to show (1-50) |
+
+**Returns:** User karma, account age, recent posts and comments, most active subreddits, and activity patterns.
+
+---
+
+#### `reddit_explain`
+
+Explain Reddit-specific terms, jargon, and culture. Covers 40+ terms.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `term` | string | Yes | — | Reddit term to explain (e.g. `"karma"`, `"cake day"`, `"AMA"`, `"flair"`, `"crosspost"`) |
+
+**Returns:** Plain-English explanation of the Reddit term with context and examples.
+
+---
+
+### Intelligence Tools
+
+These tools analyze Reddit data for business intelligence. All are free — Pro unlocks unlimited results and deeper analysis.
+
+#### `find_pain_points`
+
+Discover user frustrations and unmet needs in any domain. Each pain point includes severity scoring (`low`, `medium`, `high`, `critical`), signal detection, and opportunity hints.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `query` | string | Yes | — | Domain or problem area (e.g. `"project management"`, `"invoicing for freelancers"`) |
+| `subreddits` | string[] | No | all Reddit | Subreddits to search |
+| `time` | enum | No | `"year"` | Time filter: `day`, `week`, `month`, `year`, `all` |
+| `limit` | number | No | 50 | Posts to analyze (5-100). Higher = slower but more thorough. |
+
+**Returns:** Pain points with text, severity, signal tags, source URLs, upvotes, recency, and opportunity hints.
+
+---
+
+#### `detect_workarounds`
+
+Find DIY solutions people have built because no good product exists. Workarounds are strong market signals — they mean demand is real.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `domain` | string | Yes | — | Problem domain (e.g. `"expense tracking"`, `"team scheduling"`) |
+| `subreddits` | string[] | No | all Reddit | Subreddits to search |
+| `time` | enum | No | `"year"` | Time filter: `day`, `week`, `month`, `year`, `all` |
+| `limit` | number | No | 50 | Posts to analyze (5-100) |
+
+**Returns:** Workarounds with descriptions, tools mentioned, frustration level, source URLs, upvotes, and signal tags.
+
+---
+
+#### `score_opportunity`
+
+Score a startup idea against real Reddit evidence. Returns a **0-100 opportunity score** with a breakdown across seven dimensions: pain frequency, pain severity, workaround prevalence, competition weakness, recency, subreddit quality, and noise penalty.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `idea` | string | Yes | — | Startup idea or product concept (e.g. `"AI-powered meal planning app"`) |
+| `subreddits` | string[] | No | all Reddit | Subreddits to analyze |
+| `competitors` | string[] | No | — | Competitor names to check sentiment for |
+| `time` | enum | No | `"year"` | Time filter: `month`, `year`, `all` |
+| `depth` | enum | No | `"thorough"` | `"quick"` = 25 posts, `"thorough"` = 75 posts |
+
+**Returns:** Total score (0-100), breakdown by dimension, confidence level (`low`/`medium`/`high`), verdict summary, and evidence count.
+
+---
+
+#### `monitor_competitors`
+
+Track how competitors are discussed on Reddit — sentiment, switching intent, praise, and complaints.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `competitors` | string[] | Yes | — | Competitor product/company names (1-25) |
+| `subreddits` | string[] | No | all Reddit | Subreddits to monitor |
+| `time` | enum | No | `"month"` | Time filter: `day`, `week`, `month`, `year` |
+| `limit` | number | No | 50 | Posts to analyze per competitor (10-100) |
+
+**Returns:** Per-competitor breakdown with mention volume, sentiment polarity, switching intent signals, feature requests, praise, and complaints with source URLs.
+
+---
+
+#### `extract_feature_gaps`
+
+Find features users want but a product doesn't offer yet. Useful for product roadmap prioritization and competitive positioning.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `product` | string | Yes | — | Product to analyze feature gaps for |
+| `competitors` | string[] | No | — | Competitors to compare against |
+| `subreddits` | string[] | No | all Reddit | Subreddits to search |
+| `time` | enum | No | `"year"` | Time filter: `month`, `year`, `all` |
+
+**Returns:** Feature gap list with descriptions, request frequency, user quotes, source URLs, and competitor comparison.
+
+---
+
+#### `track_pricing_objections`
+
+Discover what people say about a product's pricing — too expensive, seeking alternatives, willing-to-pay thresholds.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `product` | string | Yes | — | Product whose pricing to analyze |
+| `subreddits` | string[] | No | all Reddit | Subreddits to search |
+| `time` | enum | No | `"year"` | Time filter: `month`, `year`, `all` |
+
+**Returns:** Pricing objections with complaint text, alternatives mentioned, price points discussed, source URLs, and upvotes.
+
+---
+
+#### `find_buyer_intent`
+
+Find people actively looking to buy a solution in your category. Each lead includes an intent score, urgency rating, budget hints, and signal breakdown.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `solution_category` | string | Yes | — | Type of solution (e.g. `"CRM software"`, `"email marketing tool"`) |
+| `subreddits` | string[] | No | all Reddit | Subreddits to search |
+| `time` | enum | No | `"month"` | Time filter: `day`, `week`, `month`, `year` |
+| `limit` | number | No | 50 | Posts to analyze (10-100) |
+
+**Returns:** Lead list with usernames, post URLs, intent scores, urgency (`low`/`medium`/`high`), budget hints, and signal tags.
+
+---
+
+#### `build_icp`
+
+Build an Ideal Customer Profile from Reddit discussions — roles, pain points, tools currently used, buying triggers, and objections.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `product_domain` | string | Yes | — | Product domain (e.g. `"developer productivity tool"`) |
+| `subreddits` | string[] | Yes | — | Subreddits where your target users are active |
+| `time` | enum | No | `"year"` | Time filter: `month`, `year`, `all` |
+
+**Returns:** ICP with roles/titles, company sizes, pain points, tools used, buying triggers, objections, and subreddit distribution.
+
+---
+
+### Export Tools
+
+#### `export_evidence_pack`
+
+Bundle results from any intelligence tool into a structured evidence report. Useful for sharing findings with your team or investors.
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `title` | string | Yes | — | Report title |
+| `data` | any | Yes | — | Results from any intelligence tool to export |
+| `format` | enum | No | `"markdown"` | Output format: `json` or `markdown` |
+
+**Returns:** Structured report with title, timestamp, summary, sections by finding type, URL citations, and data point counts.
+
+---
+
+## Three Pillars
+
+BuildRadar's 14 tools are organized around three intelligence pillars, plus core Reddit browsing.
+
+### Idea Mining (5 tools)
+
+Validate startup ideas with real evidence before writing a single line of code.
+
+| Tool | What it answers |
+|------|----------------|
+| `find_pain_points` | Where does it hurt? What are people frustrated with? |
+| `detect_workarounds` | Are people building hacky solutions? (Strong buy signal) |
+| `score_opportunity` | Is this idea worth pursuing? (0-100 with full breakdown) |
+| `extract_feature_gaps` | What's missing from existing products? |
+| `track_pricing_objections` | Is pricing an opening for a cheaper alternative? |
+
+### Market Intelligence (4 tools)
+
+Understand your competitive landscape from the user's perspective.
+
+| Tool | What it answers |
+|------|----------------|
+| `monitor_competitors` | How are competitors perceived? Who's switching away? |
+| `extract_feature_gaps` | Where are competitors falling short? |
+| `track_pricing_objections` | Are competitors pricing themselves out of the market? |
+| `score_opportunity` | How strong is the market opening? |
+
+### Lead Generation (3 tools)
+
+Find real people who want to buy what you're building.
+
+| Tool | What it answers |
+|------|----------------|
+| `find_buyer_intent` | Who is actively looking to buy right now? |
+| `build_icp` | Who is my ideal customer? What do they look like? |
+| `export_evidence_pack` | Package the evidence for my team or investors |
+
+### Reddit Browsing (5 tools)
+
+All the basics — browse, search, read, analyze, and learn Reddit.
+
+| Tool | What it does |
+|------|-------------|
+| `browse_subreddit` | Browse any subreddit with sorting and filters |
+| `search_reddit` | Search across Reddit with advanced query options |
+| `post_details` | Get full post content with comment tree and links |
+| `user_profile` | Analyze any user's activity and expertise |
+| `reddit_explain` | Explain Reddit terms and culture (40+ terms) |
+
+---
+
+## Authentication (Optional)
+
+BuildRadar works **immediately with zero configuration**. Authentication is optional and only needed for higher rate limits.
+
+### Three tiers
+
+| Tier | Rate Limit | Setup Required |
+|------|-----------|----------------|
+| **Anonymous** | 10 requests/min | None — just install and go |
+| **App-Only** | 60 requests/min | Reddit Client ID + Client Secret |
+| **Authenticated** | 100 requests/min | Client ID + Secret + Username + Password |
+
+### Setting up Reddit API credentials
+
+If you want higher rate limits, follow these steps:
+
+1. Go to [reddit.com/prefs/apps](https://www.reddit.com/prefs/apps)
+2. Scroll to the bottom and click **"create another app..."**
+3. Fill in the form:
+   - **Name:** anything (e.g. `buildradar`)
+   - **Type:** select **script**
+   - **Description:** optional
+   - **About URL:** optional
+   - **Redirect URI:** `http://localhost:8080` (required but not used)
+4. Click **"create app"**
+5. Note down:
+   - **Client ID:** the string under your app name (looks like `a1b2c3d4e5f6g7`)
+   - **Client Secret:** the string labeled "secret"
+
+### Interactive setup
+
+Run the built-in auth helper:
 
 ```bash
 npx reddit-intel-agent-mcp --auth
 ```
 
-Follow the prompts to add Reddit API credentials:
-- **App-Only** (just Client ID + Secret): 60 req/min
-- **Authenticated** (add username + password): 100 req/min
+Follow the prompts to enter your credentials. They are saved locally.
 
-Get credentials at: https://www.reddit.com/prefs/apps (click "Create App" > type "script")
+### Manual setup via environment variables
+
+**App-Only (60 req/min):**
+
+```json
+{
+  "mcpServers": {
+    "reddit-intel": {
+      "command": "npx",
+      "args": ["-y", "reddit-intel-agent-mcp"],
+      "env": {
+        "REDDIT_INTEL_CLIENT_ID": "your_client_id",
+        "REDDIT_INTEL_CLIENT_SECRET": "your_client_secret"
+      }
+    }
+  }
+}
+```
+
+**Authenticated (100 req/min):**
+
+```json
+{
+  "mcpServers": {
+    "reddit-intel": {
+      "command": "npx",
+      "args": ["-y", "reddit-intel-agent-mcp"],
+      "env": {
+        "REDDIT_INTEL_CLIENT_ID": "your_client_id",
+        "REDDIT_INTEL_CLIENT_SECRET": "your_client_secret",
+        "REDDIT_INTEL_USERNAME": "your_reddit_username",
+        "REDDIT_INTEL_PASSWORD": "your_reddit_password"
+      }
+    }
+  }
+}
+```
+
+---
+
+## Pricing (Founder-Friendly)
+
+We built this for indie hackers, founders, and small teams. The open-source MCP is free forever.
+
+| | Free MCP | Free Dashboard *(coming soon)* | Pro Dashboard |
+|---|----------|-------------------------------|---------------|
+| **All 14 tools** | Yes | Yes | Yes |
+| **Where it runs** | Your machine (local) | [app.buildradar.xyz](https://app.buildradar.xyz) | [app.buildradar.xyz](https://app.buildradar.xyz) |
+| **Queries** | Unlimited | 20/month | Unlimited |
+| **Monitors** | - | 1 | Unlimited |
+| **Alerts** | - | - | Yes (email + Slack) |
+| **Evidence exports** | Yes (local) | Yes | Yes |
+| **History** | Current session | 7 days | 90 days |
+| **Price** | **Free** | **Free** | **$14.99/mo** |
+| **Get it** | `npx reddit-intel-agent-mcp` | Coming soon | [buildradar.xyz](https://buildradar.xyz) |
+
+> **The open-source MCP is free forever.** The dashboard is where we add value beyond what a CLI can do — persistent monitors, alerts, trend history, and team collaboration.
+
+---
+
+## Comparison with Other Tools
+
+How BuildRadar compares to [reddit-mcp-buddy](https://github.com/nicholasgriffintn/reddit-mcp-buddy), the most popular Reddit MCP server:
+
+| Feature | reddit-mcp-buddy | BuildRadar |
+|---------|-----------------|------------|
+| Total tools | 5 | **14** |
+| Intelligence scoring (0-100) | No | **Yes** |
+| Pain point detection | No | **Yes** |
+| Buyer intent detection | No | **Yes** |
+| Competitor tracking | No | **Yes** |
+| Feature gap analysis | No | **Yes** |
+| Pricing objection tracking | No | **Yes** |
+| ICP builder | No | **Yes** |
+| Workaround detection | No | **Yes** |
+| Evidence export (JSON/Markdown) | No | **Yes** |
+| ChatGPT support | No | **Yes** |
+| Gemini support | No | **Yes** |
+| REST API | No | **Yes** |
+| StreamableHTTP | No | **Yes** |
+| SSE | No | **Yes** |
+| Self-hosted | Yes | **Yes** |
+| Open source | Yes | **Yes** |
+| Auth required | Yes (Reddit API) | **No** (optional) |
+| Price | Free | **Free** |
+
+---
 
 ## Production Deployment
 
-### Deploy to Railway (recommended)
+### Hosted version
 
-The hosted version is already live at `https://api.buildradar.xyz`. To self-host:
+BuildRadar is already hosted and available at:
+
+```
+https://api.buildradar.xyz
+```
+
+No deployment needed. Just point your client at the hosted endpoints (see [Protocols Supported](#protocols-supported)).
+
+### Deploy to Railway
 
 1. Fork this repo
-2. Go to [railway.app](https://railway.app) > New Project > Deploy from GitHub
-3. Add environment variables:
+2. Go to [railway.app](https://railway.app) > **New Project** > **Deploy from GitHub**
+3. Select your fork
+4. Add environment variables:
+
 ```
 REDDIT_INTEL_HTTP=true
 REDDIT_INTEL_API_KEY=your-secret-api-key
-REDDIT_INTEL_BASE_URL=https://your-domain.com
+REDDIT_INTEL_BASE_URL=https://your-app.up.railway.app
 ```
+
+5. Deploy. Railway auto-detects the Dockerfile.
 
 ### Deploy with Docker
 
 ```bash
-docker build -t reddit-intel .
+# Build
+docker build -t reddit-intel-agent-mcp .
+
+# Run
 docker run -p 3000:3000 \
   -e REDDIT_INTEL_HTTP=true \
   -e REDDIT_INTEL_API_KEY=your-secret-api-key \
-  reddit-intel
+  -e REDDIT_INTEL_BASE_URL=https://your-domain.com \
+  reddit-intel-agent-mcp
 ```
 
-### Security
-
-When running in HTTP mode with `--http`:
-- Set `REDDIT_INTEL_API_KEY` to require authentication on all endpoints
-- Clients authenticate via `Authorization: Bearer <key>` header
-- Per-IP rate limiting (120 req/min) is built in
-- Public endpoints (health, OpenAPI spec, discovery) don't require auth
-
-## Environment Variables
-
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `REDDIT_INTEL_HTTP` | Enable HTTP server | No (default: false) |
-| `REDDIT_INTEL_PORT` | HTTP port | No (default: 3000) |
-| `REDDIT_INTEL_API_KEY` | API key for HTTP auth | No (recommended for production) |
-| `REDDIT_INTEL_BASE_URL` | Public URL for OpenAPI spec | No |
-| `REDDIT_INTEL_CLIENT_ID` | Reddit app client ID | No (for higher rate limits) |
-| `REDDIT_INTEL_CLIENT_SECRET` | Reddit app client secret | No |
-| `REDDIT_INTEL_USERNAME` | Reddit username | No (for 100 req/min) |
-| `REDDIT_INTEL_PASSWORD` | Reddit password | No |
-| `REDDIT_INTEL_TIER` | Product tier (free/pro) | No (default: free) |
-| `REDDIT_INTEL_LICENSE_KEY` | License key for Pro/Team | No |
-
-## Protocols Supported
-
-| Protocol | Endpoint | Use case |
-|----------|----------|----------|
-| MCP Stdio | `npx reddit-intel-agent-mcp` | Claude Desktop, Claude Code, Cursor, Windsurf, Cline |
-| MCP StreamableHTTP | `https://api.buildradar.xyz/mcp` | Remote MCP clients, modern MCP spec |
-| MCP SSE | `https://api.buildradar.xyz/sse` | Cursor, Cline, older MCP clients |
-| REST API | `https://api.buildradar.xyz/api/tools/:name` | ChatGPT, Gemini, Perplexity, any HTTP client |
-| OpenAI Plugin | `https://api.buildradar.xyz/.well-known/ai-plugin.json` | ChatGPT GPT Store |
-| MCP Discovery | `https://api.buildradar.xyz/.well-known/mcp.json` | MCP registries, auto-detection |
-
-## Development
+### Deploy with Node.js
 
 ```bash
 git clone https://github.com/Houseofmvps/reddit-intel-agent-mcp.git
 cd reddit-intel-agent-mcp
 npm install
 npm run build
-npm test
+
+REDDIT_INTEL_HTTP=true \
+REDDIT_INTEL_API_KEY=your-secret-api-key \
+REDDIT_INTEL_BASE_URL=https://your-domain.com \
+  npm start
 ```
 
-## License
+---
 
-MIT — use it however you want.
+## Security & Privacy
+
+BuildRadar is designed with a security-first mindset:
+
+- **Read-only operations.** BuildRadar never posts, votes, comments, or modifies anything on Reddit. Every request is a read operation.
+- **No tracking, no telemetry.** We do not collect usage data, analytics, or telemetry of any kind. The hosted version at `api.buildradar.xyz` logs only what's needed for rate limiting (IP hashes, request counts).
+- **Credentials stay local.** Your Reddit API credentials are only sent to Reddit's OAuth endpoints (`https://www.reddit.com/api/v1/access_token`). They are never sent to BuildRadar servers.
+- **API key auth for HTTP mode.** When running in HTTP mode, set `REDDIT_INTEL_API_KEY` to require `Authorization: Bearer <key>` on all endpoints. Public endpoints (health check, OpenAPI spec, discovery) are excluded.
+- **Per-IP rate limiting.** Built-in rate limiting at 120 requests/minute per IP to prevent abuse in HTTP mode.
+- **Open source for audit.** Every line of code is MIT-licensed and available for inspection. No obfuscated logic, no hidden network calls.
+
+---
+
+## Protocols Supported
+
+| Protocol | Endpoint | Use Case |
+|----------|----------|----------|
+| **MCP Stdio** | `npx reddit-intel-agent-mcp` | Claude Desktop, Claude Code, Cursor, Windsurf, Cline |
+| **MCP StreamableHTTP** | `https://api.buildradar.xyz/mcp` | Remote MCP clients, modern MCP spec |
+| **MCP SSE** | `https://api.buildradar.xyz/sse` | Cursor (remote), Cline, older MCP clients |
+| **REST API** | `https://api.buildradar.xyz/api/tools/:name` | ChatGPT, Gemini, Perplexity, Grok, any HTTP client |
+| **OpenAI Plugin** | `https://api.buildradar.xyz/.well-known/ai-plugin.json` | ChatGPT Custom GPTs via Actions |
+| **MCP Discovery** | `https://api.buildradar.xyz/.well-known/mcp.json` | MCP registries, auto-detection, tool directories |
+
+All hosted endpoints are live at `https://api.buildradar.xyz`. For self-hosted, replace with `http://localhost:3000` (or your configured port).
+
+---
+
+## Environment Variables
+
+| Variable | Description | Required | Default |
+|----------|-------------|----------|---------|
+| `REDDIT_INTEL_HTTP` | Enable HTTP server mode (`true`/`false`) | No | `false` |
+| `REDDIT_INTEL_PORT` | HTTP server port | No | `3000` |
+| `REDDIT_INTEL_API_KEY` | API key for HTTP mode authentication | No (recommended for production) | — |
+| `REDDIT_INTEL_BASE_URL` | Public base URL (used in OpenAPI spec and discovery) | No | — |
+| `REDDIT_INTEL_CLIENT_ID` | Reddit app Client ID (for higher rate limits) | No | — |
+| `REDDIT_INTEL_CLIENT_SECRET` | Reddit app Client Secret | No | — |
+| `REDDIT_INTEL_USERNAME` | Reddit username (for 100 req/min authenticated tier) | No | — |
+| `REDDIT_INTEL_PASSWORD` | Reddit password | No | — |
+| `REDDIT_INTEL_TIER` | Product tier: `free` or `pro` | No | `free` |
+| `REDDIT_INTEL_LICENSE_KEY` | License key for Pro tier (via [buildradar.xyz](https://buildradar.xyz)) | No | — |
+
+---
+
+## Troubleshooting
+
+### "Rate limit errors" or "429 Too Many Requests"
+
+You're hitting Reddit's anonymous rate limit (10 requests/minute). Add Reddit API credentials to increase your limit:
+
+```bash
+npx reddit-intel-agent-mcp --auth
+```
+
+Or set `REDDIT_INTEL_CLIENT_ID` and `REDDIT_INTEL_CLIENT_SECRET` environment variables. See [Authentication](#authentication-optional) for full setup instructions.
+
+### "Subreddit not found" or empty results
+
+- Double-check the spelling. Subreddit names are case-insensitive but must exist.
+- The subreddit may be private, quarantined, or banned. Try browsing it directly on reddit.com first.
+- Some subreddits have very little activity — try broader subreddits or a wider time range.
+
+### "Connection refused" or network errors
+
+- Check that Reddit is up: [redditstatus.com](https://www.redditstatus.com)
+- If using the hosted version, check that `https://api.buildradar.xyz` is reachable.
+- If self-hosting, make sure the server is running and the port isn't blocked by a firewall.
+
+### JSON output instead of formatted text in Claude
+
+Claude formats tool output automatically. Just ask your question naturally — don't ask for "JSON" or "raw output" unless you specifically want that. For example:
+
+- Instead of: *"Call find_pain_points and return JSON"*
+- Say: *"Find pain points about project management on Reddit"*
+
+Claude will present the results in a readable format with summaries and highlights.
+
+### Tools not showing up in Claude Desktop
+
+1. Make sure you restarted Claude Desktop after editing the config.
+2. Check that the config JSON is valid (no trailing commas, correct syntax).
+3. Look for "reddit-intel" in the tools menu (hammer icon) at the bottom of the chat.
+4. If using multiple MCP servers, make sure each has a unique name.
+
+### "Cannot find module" or npm errors
+
+```bash
+# Clear the npx cache and try again
+npx --yes reddit-intel-agent-mcp
+
+# Or install globally
+npm install -g reddit-intel-agent-mcp
+reddit-intel-agent-mcp
+```
+
+Requires Node.js 18 or later. Check your version with `node --version`.
+
+---
+
+## Development
+
+```bash
+# Clone the repository
+git clone https://github.com/Houseofmvps/reddit-intel-agent-mcp.git
+cd reddit-intel-agent-mcp
+
+# Install dependencies
+npm install
+
+# Build
+npm run build
+
+# Run tests
+npm test
+
+# Run tests in watch mode
+npm run test:watch
+
+# Run with coverage
+npm run test:coverage
+
+# Type-check without emitting
+npm run typecheck
+
+# Start in development mode (auto-reload)
+npm run dev
+
+# Start in HTTP mode
+npm run start:http
+
+# Build and run Docker
+npm run docker:build
+npm run docker:run
+```
+
+### Project structure
+
+```
+src/
+  index.ts              Entry point (stdio vs HTTP routing)
+  server.ts             MCP server + HTTP server setup
+  cli.ts                CLI argument parsing
+  api/
+    rest.ts             REST API endpoints
+  core/
+    auth.ts             Reddit OAuth (anonymous, app-only, authenticated)
+    cache.ts            In-memory cache with TTL
+    rate-limiter.ts     Token bucket rate limiter
+    license.ts          License key validation
+    tiers.ts            Free/Pro tier enforcement
+  intelligence/
+    patterns.ts         Signal pattern matching (pain, workaround, intent, etc.)
+    scoring.ts          Opportunity and lead scoring (0-100)
+    clustering.ts       Post clustering by topic
+    index.ts            Intelligence module exports
+  reddit/
+    client.ts           Reddit API client (fetch-based, zero deps)
+    formatter.ts        Raw Reddit data → structured output
+  tools/
+    schemas.ts          Zod schemas for all 14 tools
+    registry.ts         Tool registry with tier enforcement
+    retrieval.ts        Retrieval tool implementations
+    intelligence.ts     Intelligence tool implementations
+    export.ts           Evidence pack export
+  prompts/
+    index.ts            MCP prompt definitions
+  types/
+    index.ts            TypeScript type definitions
+tests/
+  intelligence/         Pattern and scoring tests
+  core/                 Cache and rate limiter tests
+```
+
+---
+
+## Support
+
+- **Bug reports:** [GitHub Issues](https://github.com/Houseofmvps/reddit-intel-agent-mcp/issues)
+- **Feature requests:** [GitHub Issues](https://github.com/Houseofmvps/reddit-intel-agent-mcp/issues) — tag with `enhancement`
+- **Questions:** [GitHub Discussions](https://github.com/Houseofmvps/reddit-intel-agent-mcp/discussions)
+- **Star on GitHub** if BuildRadar is useful to you — it helps others find it: [github.com/Houseofmvps/reddit-intel-agent-mcp](https://github.com/Houseofmvps/reddit-intel-agent-mcp)
+
+---
+
+Made for founders, by a founder. [MIT License](LICENSE).
