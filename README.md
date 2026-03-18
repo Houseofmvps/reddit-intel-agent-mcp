@@ -53,31 +53,27 @@ Done. Now ask Claude Code: *"Find buyer intent for CRM tools on Reddit"*
 
 ### ChatGPT (Custom GPT)
 
-1. Start the HTTP server:
-```bash
-npx reddit-intel-agent-mcp --http
-```
-2. Go to [chat.openai.com](https://chat.openai.com) > **Explore GPTs** > **Create**
-3. Click **Configure** > **Actions** > **Import from URL**
-4. Enter: `http://localhost:3000/.well-known/ai-plugin.json`
-5. Save and use your custom GPT
+1. Go to [chat.openai.com](https://chat.openai.com) > **Explore GPTs** > **Create**
+2. Click **Configure** > **Actions** > **Import from URL**
+3. Enter: `https://api.buildradar.xyz/.well-known/ai-plugin.json`
+4. Save and use your custom GPT
+
+Or self-host: `npx reddit-intel-agent-mcp --http` and use `http://localhost:3000/.well-known/ai-plugin.json`
 
 ### Gemini
 
-1. Start the HTTP server:
-```bash
-npx reddit-intel-agent-mcp --http
-```
-2. Use the REST endpoints:
+Use the hosted REST endpoints:
 ```bash
 # List all tools
-curl http://localhost:3000/api/tools
+curl https://api.buildradar.xyz/api/tools
 
 # Call a tool
-curl -X POST http://localhost:3000/api/tools/search_reddit \
+curl -X POST https://api.buildradar.xyz/api/tools/search_reddit \
   -H "Content-Type: application/json" \
   -d '{"query": "best CRM for startups", "subreddits": ["startups", "SaaS"]}'
 ```
+
+Or self-host: `npx reddit-intel-agent-mcp --http` and use `http://localhost:3000/api/tools`
 
 ### Any MCP Client
 
@@ -85,22 +81,29 @@ curl -X POST http://localhost:3000/api/tools/search_reddit \
 # Option 1: stdio (most common)
 npx reddit-intel-agent-mcp
 
-# Option 2: HTTP with StreamableHTTP
-npx reddit-intel-agent-mcp --http
-# Connect to: http://localhost:3000/mcp
+# Option 2: Hosted StreamableHTTP
+# Connect to: https://api.buildradar.xyz/mcp
 
-# Option 3: HTTP with SSE (legacy)
+# Option 3: Hosted SSE (legacy)
+# SSE stream: GET https://api.buildradar.xyz/sse
+# Send messages: POST https://api.buildradar.xyz/messages?sessionId=xxx
+
+# Option 4: Self-host
 npx reddit-intel-agent-mcp --http
-# SSE stream: GET http://localhost:3000/sse
-# Send messages: POST http://localhost:3000/messages?sessionId=xxx
+# StreamableHTTP: http://localhost:3000/mcp
+# SSE: http://localhost:3000/sse
 ```
 
 ### Any HTTP Client (Perplexity, Grok, custom apps)
 
 ```bash
-npx reddit-intel-agent-mcp --http
+# Use the hosted API
+curl -X POST https://api.buildradar.xyz/api/tools/find_pain_points \
+  -H "Content-Type: application/json" \
+  -d '{"query": "email marketing", "subreddits": ["startups", "Entrepreneur"]}'
 
-# Call any tool via REST
+# Or self-host
+npx reddit-intel-agent-mcp --http
 curl -X POST http://localhost:3000/api/tools/find_pain_points \
   -H "Content-Type: application/json" \
   -d '{"query": "email marketing", "subreddits": ["startups", "Entrepreneur"]}'
@@ -185,12 +188,15 @@ Get credentials at: https://www.reddit.com/prefs/apps (click "Create App" > type
 
 ### Deploy to Railway (recommended)
 
+The hosted version is already live at `https://api.buildradar.xyz`. To self-host:
+
 1. Fork this repo
 2. Go to [railway.app](https://railway.app) > New Project > Deploy from GitHub
 3. Add environment variables:
 ```
 REDDIT_INTEL_HTTP=true
 REDDIT_INTEL_API_KEY=your-secret-api-key
+REDDIT_INTEL_BASE_URL=https://your-domain.com
 ```
 
 ### Deploy with Docker
@@ -223,7 +229,7 @@ When running in HTTP mode with `--http`:
 | `REDDIT_INTEL_CLIENT_SECRET` | Reddit app client secret | No |
 | `REDDIT_INTEL_USERNAME` | Reddit username | No (for 100 req/min) |
 | `REDDIT_INTEL_PASSWORD` | Reddit password | No |
-| `REDDIT_INTEL_TIER` | Product tier (free/pro/team) | No (default: free) |
+| `REDDIT_INTEL_TIER` | Product tier (free/pro) | No (default: free) |
 | `REDDIT_INTEL_LICENSE_KEY` | License key for Pro/Team | No |
 
 ## Protocols Supported
@@ -231,11 +237,11 @@ When running in HTTP mode with `--http`:
 | Protocol | Endpoint | Use case |
 |----------|----------|----------|
 | MCP Stdio | `npx reddit-intel-agent-mcp` | Claude Desktop, Claude Code, Cursor, Windsurf, Cline |
-| MCP StreamableHTTP | `POST /mcp` | Remote MCP clients, modern MCP spec |
-| MCP SSE | `GET /sse` + `POST /messages` | Cursor, Cline, older MCP clients |
-| REST API | `/api/tools/:name` | ChatGPT, Gemini, Perplexity, any HTTP client |
-| OpenAI Plugin | `/.well-known/ai-plugin.json` | ChatGPT GPT Store |
-| MCP Discovery | `/.well-known/mcp.json` | MCP registries, auto-detection |
+| MCP StreamableHTTP | `https://api.buildradar.xyz/mcp` | Remote MCP clients, modern MCP spec |
+| MCP SSE | `https://api.buildradar.xyz/sse` | Cursor, Cline, older MCP clients |
+| REST API | `https://api.buildradar.xyz/api/tools/:name` | ChatGPT, Gemini, Perplexity, any HTTP client |
+| OpenAI Plugin | `https://api.buildradar.xyz/.well-known/ai-plugin.json` | ChatGPT GPT Store |
+| MCP Discovery | `https://api.buildradar.xyz/.well-known/mcp.json` | MCP registries, auto-detection |
 
 ## Development
 
