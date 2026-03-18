@@ -153,7 +153,7 @@ Every tool is free. No signup required. No API key needed.
 
 We built this for indie hackers, founders, and small teams. Everyone gets access to everything.
 
-| | Free | Pro ($7.99/mo) |
+| | Free | Pro ($9.99/mo) |
 |---|---|---|
 | **All 14 tools** | Yes | Yes |
 | **Results per query** | 10 | Unlimited |
@@ -161,6 +161,7 @@ We built this for indie hackers, founders, and small teams. Everyone gets access
 | **Clustering analysis** | - | Yes |
 | **Opportunity hints** | - | Yes |
 | **Evidence packs** | Yes | Yes |
+| **License key** | - | Via Polar.sh |
 | **Support** | GitHub Issues | Email |
 
 **Pro costs less than two coffees per month.** Get it at [buildradar.xyz](https://buildradar.xyz). Set it up in 30 seconds:

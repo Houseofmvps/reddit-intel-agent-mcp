@@ -26,7 +26,7 @@ import { handleRestRequest } from './api/rest.js';
 // import { PROMPT_PACKS } from './prompts/index.js';
 
 export const SERVER_NAME = 'reddit-intelligence-agent';
-export const SERVER_VERSION = '1.4.0';
+export const SERVER_VERSION = '1.5.0';
 
 // ─── Response validation ────────────────────────────────────────
 

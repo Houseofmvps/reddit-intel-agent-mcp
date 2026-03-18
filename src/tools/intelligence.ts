@@ -77,7 +77,7 @@ export class IntelligenceTools {
         })),
         total_found: painPoints.length,
         note: painPoints.length > 10
-          ? `Showing 10 of ${painPoints.length} pain points. Upgrade to Pro ($7.99/mo) at https://buildradar.xyz for unlimited results with opportunity hints.`
+          ? `Showing 10 of ${painPoints.length} pain points. Upgrade to Pro ($9.99/mo) at https://buildradar.xyz for unlimited results with opportunity hints.`
           : undefined,
       };
     }
@@ -158,7 +158,7 @@ export class IntelligenceTools {
         })),
         total_found: workarounds.length,
         note: workarounds.length > 10
-          ? `Showing 10 of ${workarounds.length} workarounds. Upgrade to Pro ($7.99/mo) at https://buildradar.xyz for unlimited results with clustering and tool mentions.`
+          ? `Showing 10 of ${workarounds.length} workarounds. Upgrade to Pro ($9.99/mo) at https://buildradar.xyz for unlimited results with clustering and tool mentions.`
           : undefined,
       };
     }

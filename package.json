@@ -1,6 +1,6 @@
 {
   "name": "reddit-intel-agent-mcp",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "Reddit Opportunity Intelligence — scored startup ideas, market signals, and buyer intent from Reddit. MCP + REST dual-protocol server.",
   "main": "dist/index.js",
   "bin": {
