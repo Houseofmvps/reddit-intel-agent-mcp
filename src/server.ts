@@ -12,6 +12,8 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 import { z } from 'zod';
 import { createServer, type IncomingMessage, type ServerResponse } from 'http';
 
+import { handleDashboardRequest } from './api/dashboard.js';
+import { handleWebhookRequest } from './api/webhooks.js';
 import { RedditAuth } from './core/auth.js';
 import { IntelCache } from './core/cache.js';
 import { RateLimiter } from './core/rate-limiter.js';
@@ -253,6 +255,51 @@ export async function startHttp(port: number) {
     // ─── API key auth (if REDDIT_INTEL_API_KEY is set) ──────
     const apiKeyRequired = !!apiKey;
     const publicPaths = ['/health', '/', '/.well-known/ai-plugin.json', '/.well-known/smithery.json', '/.well-known/mcp.json', '/api/openapi.json'];
+
+    // ─── Better Auth routes (bypass API key) ────────────────
+    if (url.startsWith('/api/auth/')) {
+      try {
+        const { toNodeHandler } = await import('better-auth/node');
+        const { getAuth } = await import('./auth/index.js');
+        const auth = getAuth();
+        const authHandler = toNodeHandler(auth);
+        await authHandler(req, res);
+      } catch (err) {
+        // Auth not configured (no DATABASE_URL) — skip silently
+        if (!res.writableEnded) {
+          res.writeHead(503, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Auth service not available' }));
+        }
+      }
+      return;
+    }
+
+    // ─── Dashboard API routes (bypass API key, uses session auth) ──
+    if (url.startsWith('/dashboard/')) {
+      try {
+        await handleDashboardRequest(req, res);
+      } catch (err) {
+        if (!res.writableEnded) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Dashboard error' }));
+        }
+      }
+      return;
+    }
+
+    // ─── Webhook routes (bypass API key, uses signature verification) ──
+    if (url.startsWith('/webhooks/')) {
+      try {
+        await handleWebhookRequest(req, res);
+      } catch (err) {
+        if (!res.writableEnded) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Webhook error' }));
+        }
+      }
+      return;
+    }
+
     const isPublicPath = publicPaths.includes(url);
 
     if (apiKeyRequired && !isPublicPath) {
@@ -484,5 +531,14 @@ export async function startHttp(port: number) {
     console.error(`\x1b[32m[reddit-intel]\x1b[0m OpenAPI Spec:   http://localhost:${port}/api/openapi.json`);
     console.error(`\x1b[32m[reddit-intel]\x1b[0m OpenAI Plugin:  http://localhost:${port}/.well-known/ai-plugin.json`);
     console.error(`\x1b[32m[reddit-intel]\x1b[0m MCP Discovery:  http://localhost:${port}/.well-known/mcp.json`);
+
+    // Start monitor cron if database is configured
+    if (process.env.DATABASE_URL) {
+      import('./monitor/cron.js').then(({ startMonitorCron }) => {
+        startMonitorCron();
+      }).catch(err => {
+        console.error('[reddit-intel] Monitor cron failed to start:', err);
+      });
+    }
   });
 }
