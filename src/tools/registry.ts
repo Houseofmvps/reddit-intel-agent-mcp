@@ -58,6 +58,7 @@ export class ToolRegistry {
     this.register('search_reddit', 'Search for posts across Reddit or specific subreddits. Returns matching posts with content and metadata.', 'free', 'retrieval', schemas.searchRedditSchema, a => this.retrieval.searchReddit(schemas.searchRedditSchema.parse(a)));
     this.register('post_details', 'Fetch a Reddit post with its comments. Requires EITHER url OR post_id.', 'free', 'retrieval', schemas.postDetailsSchema, a => this.retrieval.postDetails(schemas.postDetailsSchema.parse(a)));
     this.register('user_profile', 'Analyze a Reddit user\'s posting history, karma, and activity patterns.', 'free', 'retrieval', schemas.userProfileSchema, a => this.retrieval.userProfile(schemas.userProfileSchema.parse(a)));
+    this.register('reddit_explain', 'Explain Reddit terms, jargon, and culture (karma, cake day, AMA, flair, etc). 40+ terms covered.', 'free', 'retrieval', schemas.redditExplainSchema, a => this.retrieval.redditExplain(schemas.redditExplainSchema.parse(a)));
 
     // ─── Intelligence tools (all free — Pro unlocks full results) ──
     this.register('find_pain_points', 'Discover user frustrations and unmet needs. Free: top 10 results. Pro: unlimited with full severity scoring.', 'free', 'intelligence', schemas.findPainPointsSchema, a => this.intel.findPainPoints(schemas.findPainPointsSchema.parse(a)));

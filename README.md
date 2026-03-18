@@ -2,7 +2,7 @@
 
 Turn Reddit into scored startup ideas, market signals, and buyer intent — right inside your AI assistant.
 
-**All 13 tools are FREE.** Works with Claude, ChatGPT, Gemini, Cursor, Windsurf, and any MCP client.
+**All 14 tools are FREE.** Works with Claude, ChatGPT, Gemini, Cursor, Windsurf, and any MCP client.
 
 ## Quick Start (2 minutes)
 
@@ -125,7 +125,7 @@ curl -X POST http://localhost:3000/api/tools/find_pain_points \
 - *"Build an ideal customer profile for developer tools from Reddit"*
 - *"Export an evidence pack of all the data you found"*
 
-## All 13 Tools
+## All 14 Tools
 
 Every tool is free. No signup required. No API key needed.
 
@@ -135,15 +135,16 @@ Every tool is free. No signup required. No API key needed.
 | 2 | `search_reddit` | Search across multiple subreddits at once |
 | 3 | `post_details` | Get full post + comments + extracted links |
 | 4 | `user_profile` | Analyze a Reddit user's activity and expertise |
-| 5 | `find_pain_points` | Detect user frustrations with severity scoring |
-| 6 | `detect_workarounds` | Find DIY solutions = market gaps |
-| 7 | `score_opportunity` | 0-100 score for any startup idea |
-| 8 | `monitor_competitors` | Track competitor sentiment and switching intent |
-| 9 | `extract_feature_gaps` | Find features users want but don't have |
-| 10 | `track_pricing_objections` | Find pricing complaints and alternatives sought |
-| 11 | `find_buyer_intent` | Detect people actively looking to buy |
-| 12 | `build_icp` | Build Ideal Customer Profile from Reddit data |
-| 13 | `export_evidence_pack` | Export structured reports (JSON/Markdown) |
+| 5 | `reddit_explain` | Explain Reddit terms and jargon (40+ terms) |
+| 6 | `find_pain_points` | Detect user frustrations with severity scoring |
+| 7 | `detect_workarounds` | Find DIY solutions = market gaps |
+| 8 | `score_opportunity` | 0-100 score for any startup idea |
+| 9 | `monitor_competitors` | Track competitor sentiment and switching intent |
+| 10 | `extract_feature_gaps` | Find features users want but don't have |
+| 11 | `track_pricing_objections` | Find pricing complaints and alternatives sought |
+| 12 | `find_buyer_intent` | Detect people actively looking to buy |
+| 13 | `build_icp` | Build Ideal Customer Profile from Reddit data |
+| 14 | `export_evidence_pack` | Export structured reports (JSON/Markdown) |
 
 ## Pricing (Founder-Friendly)
 
@@ -151,7 +152,7 @@ We built this for indie hackers, founders, and small teams. Everyone gets access
 
 | | Free | Pro ($9/mo) | Team ($29/mo) |
 |---|---|---|---|
-| **All 13 tools** | Yes | Yes | Yes |
+| **All 14 tools** | Yes | Yes | Yes |
 | **Results per query** | 10 | Unlimited | Unlimited |
 | **Scoring & signals** | Basic | Full breakdowns | Full breakdowns |
 | **Clustering analysis** | - | Yes | Yes |

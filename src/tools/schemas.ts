@@ -44,6 +44,10 @@ export const userProfileSchema = z.object({
   top_subreddits_limit: z.number().min(1).max(50).optional().default(10),
 });
 
+export const redditExplainSchema = z.object({
+  term: z.string().describe('Reddit term or concept to explain (e.g. "karma", "cake day", "AMA", "flair", "crosspost")'),
+});
+
 // ─── Intelligence Schemas (Free basic / Pro scored) ─────────────
 
 export const findPainPointsSchema = z.object({
