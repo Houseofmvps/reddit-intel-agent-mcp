@@ -10,7 +10,7 @@
  *   6. Send alerts (email or Slack)
  */
 
-import { eq, and, isNull, or, lt } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import { getDb, schema } from '../db/index.js';
 import { decrypt } from '../db/crypto.js';
 import { RedditAuth } from '../core/auth.js';
@@ -27,7 +27,8 @@ import {
 import type { RedditPost } from '../types/index.js';
 import { sendAlert, type AlertPayload } from './alerts.js';
 
-const SCAN_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
+const PRO_SCAN_INTERVAL_MS = 1 * 60 * 60 * 1000; // 1 hour for pro users
+const FREE_SCAN_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours for free users
 
 interface ScanStats {
   monitorsScanned: number;
@@ -43,20 +44,28 @@ export async function runScanCycle(): Promise<ScanStats> {
   const db = getDb();
   const stats: ScanStats = { monitorsScanned: 0, resultsFound: 0, leadsFound: 0, errors: 0 };
 
-  // Get all active monitors that haven't been scanned recently
-  const staleThreshold = new Date(Date.now() - SCAN_INTERVAL_MS);
-  const monitors = await db
+  // Get all active monitors
+  const allActiveMonitors = await db
     .select()
     .from(schema.monitor)
-    .where(
-      and(
-        eq(schema.monitor.active, true),
-        or(
-          isNull(schema.monitor.lastScannedAt),
-          lt(schema.monitor.lastScannedAt, staleThreshold),
-        ),
-      ),
-    );
+    .where(eq(schema.monitor.active, true));
+
+  // Look up user tiers so we can apply per-tier staleness thresholds
+  const userIds = [...new Set(allActiveMonitors.map(m => m.userId))];
+  const userTiers = new Map<string, string>();
+  for (const uid of userIds) {
+    const [u] = await db.select({ tier: schema.user.tier }).from(schema.user).where(eq(schema.user.id, uid));
+    if (u) userTiers.set(uid, u.tier);
+  }
+
+  // Filter monitors that are stale based on their user's tier
+  const now = Date.now();
+  const monitors = allActiveMonitors.filter(m => {
+    if (!m.lastScannedAt) return true; // never scanned
+    const tier = userTiers.get(m.userId) ?? 'free';
+    const interval = tier === 'pro' ? PRO_SCAN_INTERVAL_MS : FREE_SCAN_INTERVAL_MS;
+    return m.lastScannedAt.getTime() < now - interval;
+  });
 
   console.error(`[scanner] Found ${monitors.length} monitors to scan`);
 
@@ -337,4 +346,32 @@ async function scanMonitor(
   }
 
   console.error(`[scanner] Monitor "${monitor.name}": ${topResults.length} results, ${highIntentResults.length} leads`);
+}
+
+/**
+ * Run a scan for a single monitor by ID.
+ * Used for on-demand "Scan Now" and post-onboarding first scan.
+ */
+export async function runSingleMonitorScan(monitorId: string, userId: string): Promise<ScanStats> {
+  const db = getDb();
+  const stats: ScanStats = { monitorsScanned: 0, resultsFound: 0, leadsFound: 0, errors: 0 };
+
+  const [monitor] = await db
+    .select()
+    .from(schema.monitor)
+    .where(and(eq(schema.monitor.id, monitorId), eq(schema.monitor.userId, userId)));
+
+  if (!monitor) {
+    console.error(`[scanner] Monitor ${monitorId} not found for user ${userId}`);
+    return stats;
+  }
+
+  try {
+    await scanUserMonitors(userId, [monitor], stats);
+  } catch (err) {
+    console.error(`[scanner] Single-monitor scan failed for ${monitorId}:`, err);
+    stats.errors++;
+  }
+
+  return stats;
 }

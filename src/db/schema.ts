@@ -120,6 +120,7 @@ export const lead = pgTable('lead', {
   redditUsername: text('reddit_username').notNull(),
   signalCount: integer('signal_count').notNull().default(1),
   status: text('status').notNull().default('new'), // 'new' | 'contacted' | 'converted'
+  notes: text('notes'), // free-form notes, nullable
   subreddits: jsonb('subreddits').notNull().$type<string[]>(),
   firstSeen: timestamp('first_seen').notNull().defaultNow(),
   lastActive: timestamp('last_active').notNull().defaultNow(),

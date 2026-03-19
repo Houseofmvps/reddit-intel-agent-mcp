@@ -12,6 +12,7 @@ import { encrypt, decrypt } from '../db/crypto.js';
 import { eq, and } from 'drizzle-orm';
 import { buildAuthorizationUrl, exchangeCodeForTokens, getRedditUsername, isRedditOAuthConfigured } from './reddit-oauth.js';
 import { randomBytes } from 'crypto';
+import { runSingleMonitorScan } from '../monitor/scanner.js';
 
 const MAX_BODY = 512 * 1024; // 512KB
 
@@ -150,6 +151,11 @@ export async function handleDashboardRequest(
       slackWebhookUrl: body.slackWebhookUrl,
     }).returning();
 
+    // Trigger first scan immediately in background (don't wait for cron)
+    runSingleMonitorScan(mon.id, userId).catch(err => {
+      console.error(`[dashboard] First scan failed for new monitor ${mon.id}:`, err);
+    });
+
     json(res, 201, { monitor: mon });
     return true;
   }
@@ -192,6 +198,29 @@ export async function handleDashboardRequest(
     return true;
   }
 
+  // ── POST /dashboard/monitors/:id/scan — Trigger immediate scan ──
+  const monScanMatch = url.match(/^\/dashboard\/monitors\/([a-f0-9-]+)\/scan$/);
+  if (monScanMatch && req.method === 'POST') {
+    const monitorId = monScanMatch[1];
+
+    // Verify monitor belongs to this user
+    const [monitor] = await db.select().from(schema.monitor)
+      .where(and(eq(schema.monitor.id, monitorId), eq(schema.monitor.userId, userId)));
+
+    if (!monitor) {
+      json(res, 404, { error: 'Monitor not found' });
+      return true;
+    }
+
+    // Fire and forget — don't block the response
+    runSingleMonitorScan(monitorId, userId).catch(err => {
+      console.error(`[dashboard] Background scan failed for monitor ${monitorId}:`, err);
+    });
+
+    json(res, 200, { scanning: true, message: 'Scan triggered' });
+    return true;
+  }
+
   // ── GET /dashboard/results ──
   if (url.startsWith('/dashboard/results') && req.method === 'GET') {
     const results = await db.select().from(schema.scanResult)
@@ -212,13 +241,27 @@ export async function handleDashboardRequest(
   // ── PUT /dashboard/leads/:id ──
   const leadUpdateMatch = url.match(/^\/dashboard\/leads\/([a-f0-9-]+)$/);
   if (leadUpdateMatch && req.method === 'PUT') {
-    const body = await readBody(req) as { status?: string } | null;
-    if (!body?.status || !['new', 'contacted', 'converted'].includes(body.status)) {
+    const body = await readBody(req) as { status?: string; notes?: string | null } | null;
+    if (!body) { json(res, 400, { error: 'Request body required' }); return true; }
+
+    const hasStatus = 'status' in body;
+    const hasNotes = 'notes' in body;
+    if (!hasStatus && !hasNotes) {
+      json(res, 400, { error: 'At least one of status or notes is required' });
+      return true;
+    }
+
+    if (hasStatus && (!body.status || !['new', 'contacted', 'converted'].includes(body.status))) {
       json(res, 400, { error: 'status must be one of: new, contacted, converted' });
       return true;
     }
+
+    const updates: Record<string, unknown> = { lastActive: new Date() };
+    if (hasStatus) updates.status = body.status;
+    if (hasNotes) updates.notes = body.notes ?? null;
+
     await db.update(schema.lead)
-      .set({ status: body.status, lastActive: new Date() })
+      .set(updates)
       .where(and(
         eq(schema.lead.id, leadUpdateMatch[1]),
         eq(schema.lead.userId, userId),
@@ -341,9 +384,117 @@ export async function handleDashboardRequest(
     return true;
   }
 
+  // ── GET /dashboard/reply-templates ──
+  if (url === '/dashboard/reply-templates' && req.method === 'GET') {
+    json(res, 200, { templates: REPLY_TEMPLATES });
+    return true;
+  }
+
+  // ── GET /dashboard/subreddit-recommendations?product=... ──
+  if (url.startsWith('/dashboard/subreddit-recommendations') && req.method === 'GET') {
+    const parsedUrl = new URL(url, `http://${req.headers.host || 'localhost'}`);
+    const product = parsedUrl.searchParams.get('product')?.toLowerCase().trim();
+    if (!product) {
+      json(res, 400, { error: 'product query parameter is required' });
+      return true;
+    }
+
+    const matched = new Set<string>();
+    for (const [category, subreddits] of Object.entries(SUBREDDIT_MAP)) {
+      if (product.includes(category)) {
+        for (const sub of subreddits) matched.add(sub);
+      }
+    }
+
+    // Also match category keywords that might appear as substrings
+    const CATEGORY_KEYWORDS: Record<string, string[]> = {
+      saas: ['saas', 'software', 'subscription', 'b2b', 'platform'],
+      devtools: ['developer', 'dev', 'api', 'sdk', 'cli', 'code', 'programming'],
+      marketing: ['marketing', 'seo', 'ads', 'content', 'social media', 'growth'],
+      ecommerce: ['ecommerce', 'e-commerce', 'shop', 'store', 'retail', 'commerce'],
+      fintech: ['fintech', 'finance', 'payment', 'banking', 'invoice', 'accounting'],
+      ai: ['ai', 'artificial intelligence', 'machine learning', 'ml', 'llm', 'gpt', 'neural'],
+      design: ['design', 'ui', 'ux', 'figma', 'prototype'],
+      productivity: ['productivity', 'project management', 'task', 'workflow', 'automation', 'notion'],
+      education: ['education', 'learning', 'course', 'teaching', 'edtech', 'tutorial'],
+      health: ['health', 'medical', 'fitness', 'wellness', 'telehealth'],
+    };
+
+    for (const [category, keywords] of Object.entries(CATEGORY_KEYWORDS)) {
+      if (keywords.some(kw => product.includes(kw))) {
+        const subreddits = SUBREDDIT_MAP[category];
+        if (subreddits) {
+          for (const sub of subreddits) matched.add(sub);
+        }
+      }
+    }
+
+    // If no matches, return general startup/business subreddits
+    if (matched.size === 0) {
+      for (const sub of ['startups', 'entrepreneur', 'smallbusiness', 'indiehackers', 'SideProject']) {
+        matched.add(sub);
+      }
+    }
+
+    json(res, 200, {
+      product,
+      subreddits: [...matched],
+      count: matched.size,
+    });
+    return true;
+  }
+
   json(res, 404, { error: 'Dashboard route not found' });
   return true;
 }
+
+// ── Static data ──
+
+const REPLY_TEMPLATES: Record<string, { name: string; template: string; tips: string }> = {
+  pain_point: {
+    name: 'Pain Point Response',
+    template: "Hey! I noticed you're dealing with {pain}. We built {product} specifically to solve this — it {key_benefit}. Happy to give you a free trial if you want to check it out. No pressure!",
+    tips: 'Acknowledge their pain first, then position your solution. Keep it genuine and helpful, not salesy.',
+  },
+  buyer_intent: {
+    name: 'Buyer Intent Response',
+    template: "Great question! I'm the founder of {product} — we do exactly this. {brief_pitch}. Would love to give you a walkthrough if you're interested. What's your main use case?",
+    tips: "They're already looking to buy. Be direct about what you offer. Ask about their specific needs.",
+  },
+  switching: {
+    name: 'Switching Intent Response',
+    template: 'I hear you — a lot of people have been switching from {competitor} lately. We built {product} as an alternative that {differentiator}. Happy to share a comparison if helpful!',
+    tips: "Don't trash the competitor. Focus on what makes you different. Offer proof.",
+  },
+  feature_request: {
+    name: 'Feature Request Response',
+    template: 'That\'s a great idea! We actually just built something similar in {product}. {feature_description}. Would love your feedback on our approach — want to try it out?',
+    tips: "Show you're listening. If you don't have the feature yet, say you're considering it.",
+  },
+  pricing_objection: {
+    name: 'Pricing Objection Response',
+    template: 'Totally get it — pricing matters. We built {product} at {price} because we wanted it accessible for {audience}. It includes {value_props}. Happy to extend a trial so you can see the ROI first.',
+    tips: "Don't compete on price alone. Emphasize value. Offer a trial to reduce risk.",
+  },
+  workaround: {
+    name: 'Workaround Response',
+    template: "Nice hack! If you're tired of the manual work, we built {product} to automate exactly this. Takes about {setup_time} to set up. Might save you some time!",
+    tips: 'Compliment their resourcefulness. Show how your product replaces the manual work.',
+  },
+};
+
+const SUBREDDIT_MAP: Record<string, string[]> = {
+  saas: ['SaaS', 'startups', 'entrepreneur', 'smallbusiness', 'indiehackers'],
+  devtools: ['programming', 'webdev', 'devops', 'node', 'reactjs', 'golang'],
+  marketing: ['marketing', 'digital_marketing', 'SEO', 'socialmedia', 'PPC'],
+  ecommerce: ['ecommerce', 'shopify', 'dropshipping', 'FulfillmentByAmazon'],
+  fintech: ['fintech', 'personalfinance', 'smallbusiness', 'accounting', 'tax'],
+  ai: ['artificial', 'MachineLearning', 'ChatGPT', 'LocalLLaMA', 'singularity'],
+  design: ['web_design', 'UI_Design', 'userexperience', 'graphic_design'],
+  productivity: ['productivity', 'Notion', 'ObsidianMD', 'PKMS', 'projectmanagement'],
+  education: ['edtech', 'learnprogramming', 'OnlineEducation', 'education'],
+  health: ['healthIT', 'digitalhealth', 'fitness', 'nutrition'],
+};
 
 // ── Helpers ──
 
