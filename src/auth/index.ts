@@ -1,10 +1,10 @@
 /**
- * Better Auth configuration — Reddit OAuth (primary) + Email/password + Magic link + GitHub OAuth
+ * Better Auth configuration — Reddit OAuth (primary) + Email/password (fallback)
  */
 
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
-import { magicLink, genericOAuth } from 'better-auth/plugins';
+import { genericOAuth } from 'better-auth/plugins';
 import { getDb, schema } from '../db/index.js';
 import { encrypt } from '../db/crypto.js';
 import { eq } from 'drizzle-orm';
@@ -12,48 +12,9 @@ import { eq } from 'drizzle-orm';
 function createAuth() {
   const db = getDb();
 
-  const socialProviders: Record<string, { clientId: string; clientSecret: string }> = {};
+  const plugins: any[] = [];
 
-  if (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
-    socialProviders.github = {
-      clientId: process.env.GITHUB_CLIENT_ID,
-      clientSecret: process.env.GITHUB_CLIENT_SECRET,
-    };
-  }
-
-  const plugins: any[] = [
-    magicLink({
-      sendMagicLink: async ({ email, url }) => {
-        const apiKey = process.env.RESEND_API_KEY;
-        if (!apiKey) {
-          console.error('[auth] RESEND_API_KEY not set, cannot send magic link');
-          return;
-        }
-        await fetch('https://api.resend.com/emails', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            from: 'BuildRadar <login@buildradar.xyz>',
-            to: [email],
-            subject: 'Sign in to BuildRadar',
-            html: `
-              <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:480px;margin:0 auto;padding:24px">
-                <h2 style="color:#1a1a2e;margin-bottom:8px">Sign in to BuildRadar</h2>
-                <p style="color:#4b5563">Click the button below to sign in. This link expires in 10 minutes.</p>
-                <a href="${url}" style="display:inline-block;background:#2563eb;color:#fff;padding:12px 28px;border-radius:6px;text-decoration:none;margin:16px 0;font-weight:500">Sign In</a>
-                <p style="color:#9ca3af;font-size:12px">If you didn't request this, you can safely ignore this email.</p>
-              </div>
-            `,
-          }),
-        });
-      },
-    }),
-  ];
-
-  // Add Reddit as generic OAuth provider if configured
+  // Reddit as generic OAuth provider (primary login method)
   if (process.env.REDDIT_OAUTH_CLIENT_ID && process.env.REDDIT_OAUTH_CLIENT_SECRET) {
     plugins.push(
       genericOAuth({
@@ -138,17 +99,15 @@ function createAuth() {
         });
       },
     },
-    ...(Object.keys(socialProviders).length > 0 ? { socialProviders } : {}),
     plugins,
     databaseHooks: {
       account: {
         create: {
           after: async (account: any) => {
-            // When a user logs in via Reddit social, auto-create redditOAuthConnection
-            // so they get 100 req/min immediately without needing "Connect Reddit" separately
+            // When a user logs in via Reddit, auto-store tokens in redditOAuthConnection
+            // so they get 100 req/min immediately — no separate "Connect Reddit" step
             if (account.providerId === 'reddit' && account.accessToken) {
               try {
-                // Fetch Reddit username from user table (set by getUserInfo during OAuth)
                 const [usr] = await db.select().from(schema.user).where(eq(schema.user.id, account.userId));
                 const redditUsername = usr?.name || 'unknown';
                 const accessToken = account.accessToken;
