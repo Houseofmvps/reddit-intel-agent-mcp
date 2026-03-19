@@ -145,7 +145,7 @@ function generateOpenAPISpec(tools: Array<{ name: string; description?: string; 
     openapi: '3.1.0',
     info: {
       title: 'Reddit Intelligence Agent',
-      version: '1.5.0',
+      version: '1.5.1',
       description: 'Reddit Revenue Intelligence for Builders — find your next customers from Reddit before your competitors do. 14 free tools across three pillars: Idea Mining, Market Intelligence, and Lead Generation.',
     },
     servers: [
