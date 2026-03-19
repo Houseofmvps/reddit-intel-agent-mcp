@@ -38,6 +38,30 @@ interface ScanStats {
 }
 
 /**
+ * Generate a contextual suggested reply based on detected signals and post content.
+ */
+function generateSuggestedReply(
+  result: { title: string; quote?: string; signals: string[] },
+  monitorName: string,
+): string {
+  const primarySignal = result.signals[0] || 'pain_point';
+  const context = result.quote || result.title;
+  // Truncate context to first sentence or 100 chars
+  const shortContext = context.split(/[.!?]/)[0].slice(0, 100);
+
+  const templates: Record<string, string> = {
+    pain_point: `I feel your pain with ${shortContext}. We built ${monitorName} to solve exactly this — would love to show you how it works if you're interested!`,
+    buyer_intent: `Great question! I'm building ${monitorName} which does exactly this. Happy to give you a walkthrough — what's your main use case?`,
+    switching: `A lot of people are making that switch lately. ${monitorName} might be worth checking out — we focused on ${shortContext.toLowerCase().includes('price') ? 'keeping it affordable' : 'making it simple'}. Happy to share more!`,
+    feature_request: `That's a great feature idea! We actually built something similar in ${monitorName}. Would love your feedback on our approach.`,
+    pricing_objection: `Totally get the pricing concern. We built ${monitorName} to be accessible — happy to extend a free trial so you can see the value first.`,
+    workaround: `Nice workaround! If you want to automate that, ${monitorName} handles this out of the box. Might save you some time — want to check it out?`,
+  };
+
+  return templates[primarySignal] || templates.pain_point;
+}
+
+/**
  * Run a full scan cycle across all active monitors
  */
 export async function runScanCycle(): Promise<ScanStats> {
@@ -266,7 +290,7 @@ async function scanMonitor(
       subreddit: r.subreddit,
       signals: r.signals,
       quote: r.quote,
-      suggestedReply: null,
+      suggestedReply: generateSuggestedReply(r, monitor.name),
       redditUrl: r.redditUrl,
       upvotes: r.upvotes,
       comments: r.comments,
