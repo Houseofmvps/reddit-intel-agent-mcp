@@ -207,6 +207,24 @@ export async function handleDashboardRequest(
     return true;
   }
 
+  // ── PUT /dashboard/leads/:id ──
+  const leadUpdateMatch = url.match(/^\/dashboard\/leads\/([a-f0-9-]+)$/);
+  if (leadUpdateMatch && req.method === 'PUT') {
+    const body = await readBody(req) as { status?: string } | null;
+    if (!body?.status || !['new', 'contacted', 'converted'].includes(body.status)) {
+      json(res, 400, { error: 'status must be one of: new, contacted, converted' });
+      return true;
+    }
+    await db.update(schema.lead)
+      .set({ status: body.status, lastActive: new Date() })
+      .where(and(
+        eq(schema.lead.id, leadUpdateMatch[1]),
+        eq(schema.lead.userId, userId),
+      ));
+    json(res, 200, { updated: true });
+    return true;
+  }
+
   json(res, 404, { error: 'Dashboard route not found' });
   return true;
 }
