@@ -28,7 +28,7 @@ import type { RedditPost } from '../types/index.js';
 import { sendAlert, type AlertPayload } from './alerts.js';
 
 const PRO_SCAN_INTERVAL_MS = 1 * 60 * 60 * 1000; // 1 hour for pro users
-const FREE_SCAN_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours for free users
+const FREE_SCAN_INTERVAL_MS = 3 * 60 * 60 * 1000; // 3 hours for free users
 
 interface ScanStats {
   monitorsScanned: number;

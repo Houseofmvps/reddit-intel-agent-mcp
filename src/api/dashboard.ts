@@ -135,8 +135,8 @@ export async function handleDashboardRequest(
     const [u] = await db.select().from(schema.user).where(eq(schema.user.id, userId));
     if (u?.tier !== 'pro') {
       const existing = await db.select().from(schema.monitor).where(eq(schema.monitor.userId, userId));
-      if (existing.length >= 1) {
-        json(res, 403, { error: 'Free tier allows 1 monitor. Upgrade to Pro for unlimited.' });
+      if (existing.length >= 3) {
+        json(res, 403, { error: 'Free tier allows 3 monitors. Upgrade to Pro for unlimited.' });
         return true;
       }
     }
@@ -441,6 +441,33 @@ export async function handleDashboardRequest(
       subreddits: [...matched],
       count: matched.size,
     });
+    return true;
+  }
+
+  // ── PUT /dashboard/leads/bulk — Bulk update lead statuses ──
+  if (url === '/dashboard/leads/bulk' && req.method === 'PUT') {
+    const body = await readBody(req) as { ids?: string[]; status?: string } | null;
+    if (!body?.ids?.length || !body?.status || !['new', 'contacted', 'converted'].includes(body.status)) {
+      json(res, 400, { error: 'ids (array) and status (new|contacted|converted) required' });
+      return true;
+    }
+
+    let updated = 0;
+    for (const id of body.ids) {
+      await db.update(schema.lead)
+        .set({ status: body.status, lastActive: new Date() })
+        .where(and(eq(schema.lead.id, id), eq(schema.lead.userId, userId)));
+      updated++;
+    }
+
+    json(res, 200, { updated });
+    return true;
+  }
+
+  // ── GET /dashboard/export-check — Check if user can export (Pro feature) ──
+  if (url === '/dashboard/export-check' && req.method === 'GET') {
+    const [u] = await db.select().from(schema.user).where(eq(schema.user.id, userId));
+    json(res, 200, { canExport: u?.tier === 'pro', tier: u?.tier || 'free' });
     return true;
   }
 
