@@ -1,5 +1,5 @@
 /**
- * Better Auth configuration — Reddit OAuth (primary) + Email/password (fallback)
+ * Better Auth configuration — Reddit OAuth only
  */
 
 import { betterAuth } from 'better-auth';
@@ -68,37 +68,7 @@ function createAuth() {
         verification: schema.verification,
       },
     }),
-    emailAndPassword: {
-      enabled: true,
-      requireEmailVerification: false,
-      sendResetPassword: async ({ user, url }) => {
-        const apiKey = process.env.RESEND_API_KEY;
-        if (!apiKey) {
-          console.error('[auth] RESEND_API_KEY not set, cannot send reset email');
-          return;
-        }
-        await fetch('https://api.resend.com/emails', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            from: 'BuildRadar <login@buildradar.xyz>',
-            to: [user.email],
-            subject: 'Reset your BuildRadar password',
-            html: `
-              <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:480px;margin:0 auto;padding:24px">
-                <h2 style="color:#1a1a2e;margin-bottom:8px">Reset your password</h2>
-                <p style="color:#4b5563">Click the button below to reset your password. This link expires in 10 minutes.</p>
-                <a href="${url}" style="display:inline-block;background:#2563eb;color:#fff;padding:12px 28px;border-radius:6px;text-decoration:none;margin:16px 0;font-weight:500">Reset Password</a>
-                <p style="color:#9ca3af;font-size:12px">If you didn't request this, you can safely ignore this email.</p>
-              </div>
-            `,
-          }),
-        });
-      },
-    },
+    emailAndPassword: { enabled: false },
     plugins,
     databaseHooks: {
       account: {
