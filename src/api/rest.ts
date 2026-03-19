@@ -60,7 +60,18 @@ export function handleRestRequest(
         return;
       }
       registry.callTool(toolName, body, tier).then(result => {
-        jsonResponse(res, result.isError ? 400 : 200, result.isError ? { error: result.result } : JSON.parse(result.result));
+        if (result.isError) {
+          jsonResponse(res, 400, { error: result.result });
+        } else {
+          let parsed: unknown;
+          try {
+            parsed = JSON.parse(result.result);
+          } catch {
+            // Result is a plain string (e.g. markdown from export_evidence_pack)
+            parsed = { result: result.result };
+          }
+          jsonResponse(res, 200, parsed);
+        }
       }).catch(e => {
         jsonResponse(res, 500, { error: e instanceof Error ? e.message : String(e) });
       });

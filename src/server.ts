@@ -258,7 +258,7 @@ export async function startHttp(port: number) {
 
     // ─── API key auth (if REDDIT_INTEL_API_KEY is set) ──────
     const apiKeyRequired = !!apiKey;
-    const publicPaths = ['/health', '/', '/.well-known/ai-plugin.json', '/.well-known/smithery.json', '/.well-known/mcp.json', '/api/openapi.json'];
+    const publicPaths = ['/health', '/', '/.well-known/ai-plugin.json', '/.well-known/smithery.json', '/.well-known/mcp.json', '/api/openapi.json', '/api/tools', '/api/prompts'];
 
     // ─── Better Auth routes (bypass API key) ────────────────
     if (url.startsWith('/api/auth/')) {

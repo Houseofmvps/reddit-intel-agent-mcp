@@ -374,11 +374,13 @@ export class IntelligenceTools {
   // ─── track_pricing_objections (Pro) ───────────────────────────
 
   async trackPricingObjections(params: z.infer<typeof trackPricingObjectionsSchema>) {
-    const prod = this.smartQuote(params.product);
+    const prod = params.product.replace(/"/g, '').trim();
     const queries = [
-      `${prod} "too expensive" OR "overpriced" OR "not worth"`,
-      `${prod} pricing OR price OR cost`,
-      `${prod} "free alternative" OR "open source alternative"`,
+      `${prod} expensive OR overpriced OR "not worth" OR "rip off" OR ripoff`,
+      `${prod} pricing OR price OR cost OR subscription OR plan`,
+      `${prod} free alternative OR open source alternative OR cheaper OR downgrade`,
+      `${prod} cancel OR cancelled OR canceling OR unsubscribe OR "switched from"`,
+      `${prod} "price increase" OR "price hike" OR "too much" OR "can't justify"`,
     ];
 
     const allPosts: RedditPost[] = [];
@@ -397,17 +399,24 @@ export class IntelligenceTools {
       signals: string[];
     }> = [];
 
+    const pricingKeywords = /\b(?:pric(?:e|ing|ed)|cost|expensive|cheap|afford|subscription|plan|tier|free|pay|paid|worth|cancel|unsubscrib|downgrad|budget|dollar|\$\d)/i;
+
     for (const post of deduped) {
       const text = `${post.title} ${post.selftext ?? ''}`;
       const matches = matchPatterns(text);
-      if (hasCategory(matches, 'pricing_objection')) {
+      const hasPricingCategory = hasCategory(matches, 'pricing_objection');
+      const hasPricingKeyword = pricingKeywords.test(text);
+      const hasPainOrFrustration = hasCategory(matches, 'pain') || hasCategory(matches, 'frustration');
+
+      if (hasPricingCategory || (hasPainOrFrustration && hasPricingKeyword)) {
         const types = matches.filter(m => m.category === 'pricing_objection').map(m => m.label);
+        const objType = types[0] ?? (hasPainOrFrustration ? 'general_dissatisfaction' : 'general');
         objections.push({
           title: post.title,
           source_url: `https://reddit.com${post.permalink}`,
           subreddit: post.subreddit,
           score: post.score,
-          objection_type: types[0] ?? 'general',
+          objection_type: objType,
           signals: signalSummary(matches),
         });
       }
