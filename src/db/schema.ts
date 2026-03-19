@@ -69,6 +69,19 @@ export const redditCredentials = pgTable('reddit_credentials', {
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
 
+export const redditOAuthConnection = pgTable('reddit_oauth_connection', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  userId: text('user_id').notNull().unique().references(() => user.id, { onDelete: 'cascade' }),
+  redditUsername: text('reddit_username').notNull(),
+  accessToken: text('access_token').notNull(), // encrypted
+  refreshToken: text('refresh_token').notNull(), // encrypted
+  scope: text('scope').notNull(),
+  expiresAt: timestamp('expires_at').notNull(),
+  status: text('status').notNull().default('active'), // 'active' | 'revoked'
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
 export const monitor = pgTable('monitor', {
   id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
   userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),

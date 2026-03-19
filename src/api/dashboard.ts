@@ -10,6 +10,8 @@ import { getSessionFromRequest } from '../auth/session.js';
 import { getDb, schema } from '../db/index.js';
 import { encrypt, decrypt } from '../db/crypto.js';
 import { eq, and } from 'drizzle-orm';
+import { buildAuthorizationUrl, exchangeCodeForTokens, getRedditUsername, isRedditOAuthConfigured } from './reddit-oauth.js';
+import { randomBytes } from 'crypto';
 
 const MAX_BODY = 512 * 1024; // 512KB
 
@@ -225,11 +227,130 @@ export async function handleDashboardRequest(
     return true;
   }
 
+  // ── GET /dashboard/reddit/connect — Initiate Reddit OAuth ──
+  if (url === '/dashboard/reddit/connect' && req.method === 'GET') {
+    if (!isRedditOAuthConfigured()) {
+      json(res, 503, { error: 'Reddit OAuth not configured on this server' });
+      return true;
+    }
+    const state = encrypt(JSON.stringify({ userId, nonce: randomBytes(16).toString('hex'), ts: Date.now() }));
+    const authUrl = buildAuthorizationUrl(state);
+    json(res, 200, { url: authUrl });
+    return true;
+  }
+
+  // ── GET /dashboard/reddit/callback — Handle Reddit OAuth redirect ──
+  if (url.startsWith('/dashboard/reddit/callback') && req.method === 'GET') {
+    const frontendBase = process.env.BETTER_AUTH_URL?.replace('api.', '') || 'https://buildradar.xyz';
+    const settingsUrl = `${frontendBase}/app/settings`;
+
+    try {
+      const parsedUrl = new URL(url, `http://${req.headers.host || 'localhost'}`);
+      const code = parsedUrl.searchParams.get('code');
+      const state = parsedUrl.searchParams.get('state');
+      const error = parsedUrl.searchParams.get('error');
+
+      if (error) {
+        redirect(res, `${settingsUrl}?reddit=error&reason=${encodeURIComponent(error)}`);
+        return true;
+      }
+
+      if (!code || !state) {
+        redirect(res, `${settingsUrl}?reddit=error&reason=missing_params`);
+        return true;
+      }
+
+      // Validate state
+      let stateData: { userId: string; ts: number };
+      try {
+        stateData = JSON.parse(decrypt(state));
+      } catch {
+        redirect(res, `${settingsUrl}?reddit=error&reason=invalid_state`);
+        return true;
+      }
+
+      if (stateData.userId !== userId) {
+        redirect(res, `${settingsUrl}?reddit=error&reason=user_mismatch`);
+        return true;
+      }
+
+      if (Date.now() - stateData.ts > 10 * 60 * 1000) {
+        redirect(res, `${settingsUrl}?reddit=error&reason=expired`);
+        return true;
+      }
+
+      // Exchange code for tokens
+      const tokens = await exchangeCodeForTokens(code);
+      const redditUsername = await getRedditUsername(tokens.access_token);
+      const expiresAt = new Date(Date.now() + tokens.expires_in * 1000);
+
+      // Upsert — one connection per user
+      const existing = await db.select().from(schema.redditOAuthConnection).where(eq(schema.redditOAuthConnection.userId, userId));
+      if (existing.length > 0) {
+        await db.update(schema.redditOAuthConnection)
+          .set({
+            redditUsername,
+            accessToken: encrypt(tokens.access_token),
+            refreshToken: encrypt(tokens.refresh_token),
+            scope: tokens.scope,
+            expiresAt,
+            status: 'active',
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.redditOAuthConnection.userId, userId));
+      } else {
+        await db.insert(schema.redditOAuthConnection).values({
+          userId,
+          redditUsername,
+          accessToken: encrypt(tokens.access_token),
+          refreshToken: encrypt(tokens.refresh_token),
+          scope: tokens.scope,
+          expiresAt,
+        });
+      }
+
+      redirect(res, `${settingsUrl}?reddit=connected`);
+    } catch (err) {
+      console.error('[reddit-oauth] callback error:', err);
+      redirect(res, `${settingsUrl}?reddit=error&reason=exchange_failed`);
+    }
+    return true;
+  }
+
+  // ── GET /dashboard/reddit/status — Check Reddit connection ──
+  if (url === '/dashboard/reddit/status' && req.method === 'GET') {
+    const [conn] = await db.select().from(schema.redditOAuthConnection).where(eq(schema.redditOAuthConnection.userId, userId));
+    if (!conn || conn.status === 'revoked') {
+      json(res, 200, { connected: false });
+    } else {
+      json(res, 200, {
+        connected: true,
+        redditUsername: conn.redditUsername,
+        scope: conn.scope,
+        connectedAt: conn.createdAt,
+        status: conn.status,
+      });
+    }
+    return true;
+  }
+
+  // ── DELETE /dashboard/reddit/disconnect — Remove Reddit connection ──
+  if (url === '/dashboard/reddit/disconnect' && req.method === 'DELETE') {
+    await db.delete(schema.redditOAuthConnection).where(eq(schema.redditOAuthConnection.userId, userId));
+    json(res, 200, { disconnected: true });
+    return true;
+  }
+
   json(res, 404, { error: 'Dashboard route not found' });
   return true;
 }
 
 // ── Helpers ──
+
+function redirect(res: ServerResponse, url: string): void {
+  res.writeHead(302, { Location: url });
+  res.end();
+}
 
 function json(res: ServerResponse, status: number, data: unknown): void {
   res.writeHead(status, {
