@@ -93,44 +93,49 @@ export async function handleDashboardRequest(
         return true;
       }
 
-      // Verify the connected account is active via Composio API
+      // Verify the connected account and extract the real entity ID + username
       let accountStatus = 'UNKNOWN';
+      let realEntityId = composioEntityId; // may still be pending_xxx
+      let redditUsername = '';
       try {
         const account = await (composio.connectedAccounts as any).retrieve(connectedAccountId);
         accountStatus = account?.status || 'UNKNOWN';
-        console.log(`[composio] Connected account ${connectedAccountId} status: ${accountStatus}`);
+        console.log(`[composio] Connected account ${connectedAccountId} status: ${accountStatus}, full keys: ${Object.keys(account || {}).join(',')}`);
+        console.log(`[composio] Connected account data:`, JSON.stringify(account, null, 2).slice(0, 2000));
+
+        // Extract the real entity ID from the connected account
+        if (account?.entityId) {
+          realEntityId = account.entityId;
+          console.log(`[composio] Resolved real entity ID: ${realEntityId}`);
+        } else if (account?.entity?.id) {
+          realEntityId = account.entity.id;
+          console.log(`[composio] Resolved real entity ID from entity.id: ${realEntityId}`);
+        }
+
+        // Try to get username from connected account metadata
+        const meta = account?.data || account?.connectionParams || account?.metadata || {};
+        const connParams = account?.connectionParams || {};
+        redditUsername = meta?.username || meta?.name || meta?.screen_name
+          || connParams?.username || connParams?.name || '';
+        if (redditUsername) {
+          console.log(`[composio] Got Reddit username from account metadata: ${redditUsername}`);
+        }
       } catch (err) {
         console.warn('[composio] Could not verify connected account, proceeding:', err);
       }
 
-      // Get Reddit username via Composio tool execution
-      // Use the entity ID (composio_user) which is what Composio maps tools to
-      let redditUsername = '';
-      if (composioEntityId) {
+      // Try REDDIT_GET_ME with the real entity ID (not the pending one)
+      if (!redditUsername && realEntityId) {
         try {
           const meResult = await composio.tools.execute('REDDIT_GET_ME', {
-            userId: composioEntityId,
+            userId: realEntityId,
             arguments: {},
           });
           const meData = (meResult?.data || meResult) as Record<string, unknown>;
           redditUsername = (meData?.name as string) || (meData?.username as string) || '';
-          console.log(`[composio] Got Reddit username via tools.execute: ${redditUsername}`);
+          console.log(`[composio] Got Reddit username via REDDIT_GET_ME (entity=${realEntityId}): ${redditUsername}`);
         } catch (err) {
-          console.warn('[composio] REDDIT_GET_ME failed, will try REST fallback:', (err as Error).message);
-        }
-      }
-
-      // Fallback: get username from Composio connected account metadata
-      if (!redditUsername) {
-        try {
-          const account = await (composio.connectedAccounts as any).retrieve(connectedAccountId);
-          const meta = account?.data || account?.connectionParams || {};
-          redditUsername = meta?.username || meta?.name || meta?.screen_name || '';
-          if (redditUsername) {
-            console.log(`[composio] Got Reddit username from account metadata: ${redditUsername}`);
-          }
-        } catch (err) {
-          console.warn('[composio] Could not get username from account metadata:', (err as Error).message);
+          console.warn('[composio] REDDIT_GET_ME failed:', (err as Error).message);
         }
       }
 
@@ -158,7 +163,7 @@ export async function handleDashboardRequest(
           email,
           emailVerified: false,
           tier: 'free',
-          composioEntityId: composioEntityId || null,
+          composioEntityId: realEntityId || composioEntityId || null,
           composioConnectedAccountId: connectedAccountId,
         });
         [existingUser] = await db.select().from(schema.user).where(eq(schema.user.id, userId));
@@ -167,9 +172,9 @@ export async function handleDashboardRequest(
         // Update existing user with latest Composio IDs
         await db.update(schema.user)
           .set({
-            composioEntityId: composioEntityId || existingUser.composioEntityId,
+            composioEntityId: realEntityId || composioEntityId || existingUser.composioEntityId,
             composioConnectedAccountId: connectedAccountId,
-            name: redditUsername !== existingUser.name && !redditUsername.startsWith('reddit_') ? redditUsername : existingUser.name,
+            name: !redditUsername.startsWith('reddit_') ? redditUsername : existingUser.name,
             updatedAt: new Date(),
           })
           .where(eq(schema.user.id, existingUser.id));
