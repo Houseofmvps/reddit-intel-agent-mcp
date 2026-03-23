@@ -3,7 +3,7 @@
  * Includes Better Auth tables + BuildRadar application tables
  */
 
-import { pgTable, text, timestamp, boolean, integer, jsonb } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, boolean, integer, jsonb, real } from 'drizzle-orm/pg-core';
 
 // ── Better Auth core tables ──
 
@@ -124,4 +124,53 @@ export const lead = pgTable('lead', {
   subreddits: jsonb('subreddits').notNull().$type<string[]>(),
   firstSeen: timestamp('first_seen').notNull().defaultNow(),
   lastActive: timestamp('last_active').notNull().defaultNow(),
+});
+
+export const leadDossier = pgTable('lead_dossier', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  leadId: text('lead_id').references(() => lead.id),
+  userId: text('user_id').notNull().references(() => user.id),
+  redditUsername: text('reddit_username').notNull(),
+  conversionScore: integer('conversion_score').notNull().default(0),
+  conversionLabel: text('conversion_label').notNull().default('cold'),
+  triggerPost: jsonb('trigger_post').notNull(),
+  painPoints: jsonb('pain_points').notNull().default([]),
+  budgetSignals: jsonb('budget_signals').notNull().default([]),
+  intentType: text('intent_type').notNull(),
+  urgency: text('urgency').notNull().default('exploring'),
+  userContext: jsonb('user_context').notNull().default({}),
+  threadAge: integer('thread_age').notNull().default(0),
+  replyWindow: integer('reply_window').notNull().default(0),
+  commentVelocity: real('comment_velocity').notNull().default(0),
+  recommendedApproach: text('recommended_approach').notNull(),
+  draftReply: text('draft_reply').notNull(),
+  status: text('status').notNull().default('pending'),
+  repliedAt: timestamp('replied_at'),
+  convertedAt: timestamp('converted_at'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
+export const conversionEvent = pgTable('conversion_event', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  dossierId: text('dossier_id').notNull().references(() => leadDossier.id),
+  userId: text('user_id').notNull().references(() => user.id),
+  fromStatus: text('from_status').notNull(),
+  toStatus: text('to_status').notNull(),
+  notes: text('notes'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+export const marketSnapshot = pgTable('market_snapshot', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  userId: text('user_id').notNull().references(() => user.id),
+  monitorId: text('monitor_id').notNull().references(() => monitor.id),
+  period: text('period').notNull(),
+  totalMentions: integer('total_mentions').notNull().default(0),
+  intentSignals: integer('intent_signals').notNull().default(0),
+  topPainPoints: jsonb('top_pain_points').notNull().default([]),
+  topSubreddits: jsonb('top_subreddits').notNull().default([]),
+  trendDirection: text('trend_direction').notNull().default('stable'),
+  weekOverWeekChange: real('week_over_week_change').notNull().default(0),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
 });

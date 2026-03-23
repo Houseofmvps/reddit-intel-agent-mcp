@@ -232,3 +232,68 @@ export interface ToolDefinition {
   tier: ToolTier;
   category: 'retrieval' | 'intelligence' | 'export';
 }
+
+// ─── Lead Dossier Types ──────────────────────────────────────────
+
+export interface LeadDossier {
+  id: string;
+  leadId: string;
+  userId: string;
+  redditUsername: string;
+  conversionScore: number;           // 0-100
+  conversionLabel: 'hot' | 'warm' | 'cold';
+  triggerPost: {
+    title: string;
+    body: string;
+    subreddit: string;
+    url: string;
+    postedAt: string;
+    commentCount: number;
+    score: number;
+  };
+  painPoints: string[];
+  budgetSignals: string[];
+  intentType: string;                 // "alternative-seeking" | "pain-expressing" | "recommendation-asking" | "migration-planning"
+  urgency: 'immediate' | 'this-week' | 'exploring';
+  userContext: {
+    accountAge: string;
+    totalKarma: number;
+    activeSubreddits: string[];
+    hasAskedForRecsBefore: boolean;
+    role?: string;
+  };
+  threadAge: number;
+  replyWindow: number;
+  commentVelocity: number;
+  recommendedApproach: string;
+  draftReply: string;
+  status: 'pending' | 'replied' | 'converted' | 'passed';
+  repliedAt?: string;
+  convertedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ConversionEvent {
+  id: string;
+  dossierId: string;
+  userId: string;
+  fromStatus: string;
+  toStatus: string;
+  notes?: string;
+  createdAt: string;
+}
+
+export interface MarketSnapshot {
+  id: string;
+  userId: string;
+  monitorId: string;
+  period: string;
+  totalMentions: number;
+  intentSignals: number;
+  topPainPoints: string[];
+  topSubreddits: string[];
+  trendDirection: 'up' | 'stable' | 'down';
+  weekOverWeekChange: number;
+  createdAt: string;
+}
