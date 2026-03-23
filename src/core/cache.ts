@@ -24,6 +24,10 @@ const ADAPTIVE_TTL: Array<[RegExp, number]> = [
   [/^user:/, 15 * 60_000],
   [/^search:/, 10 * 60_000],
   [/^intel:/, 5 * 60_000],
+  [/^composio:search:/, 20 * 60_000],   // 20 min (vs 10 for direct)
+  [/^composio:browse:/, 15 * 60_000],   // 15 min
+  [/^composio:user:/,   60 * 60_000],   // 1 hour (user profiles change slowly)
+  [/^dossier:/,         30 * 60_000],   // 30 min (dossiers are expensive)
 ];
 
 export class IntelCache {

@@ -9,6 +9,7 @@
 
 import type { Composio } from '@composio/core';
 import type { RedditPost, RedditComment } from '../types/index.js';
+import { IntelCache } from '../core/cache.js';
 
 export interface ComposioSearchOptions {
   limit?: number;
@@ -26,10 +27,12 @@ export interface ComposioSubredditOptions {
 export class ComposioRedditClient {
   private composio: Composio;
   private userId: string;
+  private cache: IntelCache;
 
-  constructor(composio: Composio, userId: string) {
+  constructor(composio: Composio, userId: string, cache?: IntelCache) {
     this.composio = composio;
     this.userId = userId;
+    this.cache = cache ?? new IntelCache({ defaultTTL: 20 * 60_000 });
   }
 
   /**
@@ -37,6 +40,10 @@ export class ComposioRedditClient {
    */
   async search(query: string, opts: ComposioSearchOptions = {}): Promise<RedditPost[]> {
     const { limit = 25, time, sort = 'relevance' } = opts;
+
+    const cacheKey = `composio:search:${query}:${sort}`;
+    const cached = this.cache.get<RedditPost[]>(cacheKey);
+    if (cached) return cached;
 
     const result = await this.composio.tools.execute('REDDIT_SEARCH_REDDIT', {
       userId: this.userId,
@@ -49,7 +56,9 @@ export class ComposioRedditClient {
     });
 
     const posts = this.extractPosts(result);
-    return posts.map((p: Record<string, unknown>) => this.normalizePost(p));
+    const normalized = posts.map((p: Record<string, unknown>) => this.normalizePost(p));
+    this.cache.set(cacheKey, normalized);
+    return normalized;
   }
 
   /**
@@ -65,6 +74,10 @@ export class ComposioRedditClient {
 
     const { limit = 25, time, after } = opts;
 
+    const cacheKey = `composio:browse:${subreddit}:${sort}`;
+    const cached = this.cache.get<RedditPost[]>(cacheKey);
+    if (cached) return cached;
+
     const result = await this.composio.tools.execute('REDDIT_GET_SUBREDDIT_POSTS', {
       userId: this.userId,
       arguments: {
@@ -77,7 +90,9 @@ export class ComposioRedditClient {
     });
 
     const posts = this.extractPosts(result);
-    return posts.map((p: Record<string, unknown>) => this.normalizePost(p));
+    const normalized = posts.map((p: Record<string, unknown>) => this.normalizePost(p));
+    this.cache.set(cacheKey, normalized);
+    return normalized;
   }
 
   /**
@@ -105,6 +120,10 @@ export class ComposioRedditClient {
    * Get content posted by a specific user.
    */
   async getUserContent(username: string): Promise<RedditPost[]> {
+    const cacheKey = `composio:user:${username}`;
+    const cached = this.cache.get<RedditPost[]>(cacheKey);
+    if (cached) return cached;
+
     const result = await this.composio.tools.execute('REDDIT_GET_USER_POSTS', {
       userId: this.userId,
       arguments: {
@@ -113,7 +132,9 @@ export class ComposioRedditClient {
     });
 
     const posts = this.extractPosts(result);
-    return posts.map((p: Record<string, unknown>) => this.normalizePost(p));
+    const normalized = posts.map((p: Record<string, unknown>) => this.normalizePost(p));
+    this.cache.set(cacheKey, normalized);
+    return normalized;
   }
 
   // ─── Normalizers ────────────────────────────────────────────────
