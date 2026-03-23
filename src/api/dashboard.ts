@@ -68,6 +68,7 @@ export async function handleDashboardRequest(
   }
 
   // ── GET /dashboard/composio/callback — Handle Composio OAuth callback, create session ──
+  // Composio appends ?status=success&connected_account_id=... to callback URL
   if (url.startsWith('/dashboard/composio/callback')) {
     const frontendOrigin = process.env.FRONTEND_URL || 'https://buildradar.xyz';
     try {
@@ -76,8 +77,19 @@ export async function handleDashboardRequest(
       const composio = getComposio();
       const db = getDb();
 
-      // Give Composio a moment to finalize the connection
-      await new Promise(r => setTimeout(r, 2000));
+      // Parse query params from callback
+      const callbackUrl = new URL(url, `${process.env.BETTER_AUTH_URL || 'https://api.buildradar.xyz'}`);
+      const status = callbackUrl.searchParams.get('status');
+      const connectedAccountId = callbackUrl.searchParams.get('connected_account_id');
+
+      console.log(`[composio] callback: status=${status}, connected_account_id=${connectedAccountId}`);
+
+      if (status !== 'success' || !connectedAccountId) {
+        console.error('[composio] callback: OAuth failed or missing params');
+        res.writeHead(302, { Location: `${frontendOrigin}/login?error=connection_failed` });
+        res.end();
+        return true;
+      }
 
       // Find the pending login to get the Composio userId we used
       const [pending] = await db
@@ -86,23 +98,11 @@ export async function handleDashboardRequest(
         .where(sql`identifier LIKE 'composio_login:%' AND expires_at > NOW()`)
         .limit(1);
 
-      // Get the temp Composio userId from the verification record
       const composioUserId = pending?.value || '';
 
       if (!composioUserId) {
         console.error('[composio] callback: no pending login found');
         res.writeHead(302, { Location: `${frontendOrigin}/login?error=session_expired` });
-        res.end();
-        return true;
-      }
-
-      // Check for active connection with this userId
-      const { checkRedditConnection } = await import('../core/composio-auth.js');
-      const connectionStatus = await checkRedditConnection(composioUserId);
-
-      if (!connectionStatus.connected) {
-        console.error('[composio] callback: connection not active for', composioUserId);
-        res.writeHead(302, { Location: `${frontendOrigin}/login?error=connection_failed` });
         res.end();
         return true;
       }
@@ -116,8 +116,11 @@ export async function handleDashboardRequest(
         });
         const meData = (meResult?.data || meResult) as Record<string, unknown>;
         redditUsername = (meData?.name as string) || (meData?.username as string) || 'reddit_user';
+        console.log(`[composio] Got Reddit username: ${redditUsername}`);
       } catch (err) {
-        console.error('[composio] failed to get Reddit username:', err);
+        console.error('[composio] failed to get Reddit username, using fallback:', err);
+        // Use the composioUserId as fallback identifier
+        redditUsername = `user_${composioUserId.replace('pending_', '').slice(0, 8)}`;
       }
 
       const email = `${redditUsername}@reddit.buildradar.xyz`;
@@ -138,7 +141,6 @@ export async function handleDashboardRequest(
         [existingUser] = await db.select().from(schema.user).where(eq(schema.user.id, userId));
         console.log(`[auth] Created new user for Reddit u/${redditUsername} (${userId})`);
       } else {
-        // Update composioEntityId on existing user
         await db.update(schema.user)
           .set({ composioEntityId: composioUserId, updatedAt: new Date() })
           .where(eq(schema.user.id, existingUser.id));
@@ -161,16 +163,16 @@ export async function handleDashboardRequest(
       // Clean up pending verification entries
       await db.execute(sql`DELETE FROM verification WHERE identifier LIKE 'composio_login:%'`);
 
-      // Set the session cookie and redirect
+      // Set the session cookie and redirect to dashboard
       const isSecure = (process.env.BETTER_AUTH_URL || '').startsWith('https');
-      const cookieValue = `better-auth.session_token=${sessionToken}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30 * 24 * 3600}${isSecure ? '; Secure' : ''}`;
+      const cookieValue = `better-auth.session_token=${sessionToken}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30 * 24 * 3600}${isSecure ? '; Secure' : ''}; Domain=${isSecure ? '.buildradar.xyz' : ''}`;
 
+      console.log(`[auth] Reddit login successful for u/${redditUsername}, redirecting to dashboard`);
       res.writeHead(302, {
         'Set-Cookie': cookieValue,
         Location: `${frontendOrigin}/app`,
       });
       res.end();
-      console.log(`[auth] Reddit login successful for u/${redditUsername}`);
     } catch (err) {
       console.error('[composio] callback error:', err);
       res.writeHead(302, { Location: `${frontendOrigin}/login?error=auth_failed` });

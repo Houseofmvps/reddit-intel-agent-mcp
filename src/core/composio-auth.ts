@@ -3,6 +3,8 @@
  *
  * Uses Composio's managed OAuth to access Reddit API without
  * our own Reddit OAuth app approval.
+ *
+ * API reference: https://docs.composio.dev/docs/authenticating-users/manually-authenticating
  */
 
 import { Composio } from '@composio/core';
@@ -28,53 +30,22 @@ export function getComposio(): Composio {
   return _instance;
 }
 
-// Cache the Reddit auth config ID
-let _redditAuthConfigId: string | null = null;
-
-/**
- * Get the auth config ID for Reddit from Composio.
- * Uses Composio-managed auth (no custom Reddit app needed).
- */
-async function getRedditAuthConfigId(): Promise<string> {
-  if (_redditAuthConfigId) return _redditAuthConfigId;
-
-  const composio = getComposio();
-  const configs = await composio.authConfigs.list({ toolkit: 'reddit' });
-  const items = 'items' in configs ? configs.items : configs;
-
-  if (!Array.isArray(items) || items.length === 0) {
-    throw new Error('No Reddit auth config found in Composio. Please set up Reddit in your Composio dashboard.');
-  }
-
-  // Prefer Composio-managed config, fall back to first available
-  const managed = items.find((c: any) => c.status === 'ENABLED');
-  const config = managed || items[0];
-  _redditAuthConfigId = (config as any).id || (config as any).uuid;
-
-  console.log(`[composio] Using Reddit auth config: ${_redditAuthConfigId}`);
-  return _redditAuthConfigId!;
-}
-
 /**
  * Initiate a Composio connection for Reddit OAuth.
+ * Uses the documented session.authorize() flow.
  * Returns a redirect URL the user should visit to authorize.
  */
 export async function getRedditConnectLink(
   userId: string,
-  redirectUrl: string,
+  callbackUrl: string,
 ): Promise<{ redirectUrl: string; connectionId: string }> {
   const composio = getComposio();
-  const authConfigId = await getRedditAuthConfigId();
 
-  // Use `link` (Composio Connect Link) for user-facing OAuth flows
-  // `initiate` is for server-side token injection, `link` generates proper redirect URLs
-  const connectionRequest = await composio.connectedAccounts.link(
-    userId,
-    authConfigId,
-    {
-      callbackUrl: redirectUrl,
-    },
-  );
+  // Create a session for this user, then authorize Reddit
+  const session = await composio.create(userId, { manageConnections: false });
+  const connectionRequest = await session.authorize('reddit', {
+    callbackUrl,
+  });
 
   return {
     redirectUrl: connectionRequest.redirectUrl ?? '',
@@ -91,20 +62,36 @@ export async function checkRedditConnection(
 ): Promise<{ connected: boolean; connectionId: string | null }> {
   const composio = getComposio();
 
-  const accounts = await composio.connectedAccounts.list({
-    userIds: [userId],
-    toolkitSlugs: ['reddit'],
-  });
+  try {
+    const session = await composio.create(userId, { manageConnections: false });
+    const toolkits = await session.toolkits();
+    const items = 'items' in toolkits ? toolkits.items : toolkits;
 
-  const items = 'items' in accounts ? (accounts as any).items : accounts;
-  const active = (Array.isArray(items) ? items : []).find(
-    (acc: { status: string; id: string }) => acc.status === 'ACTIVE',
-  );
+    const reddit = (Array.isArray(items) ? items : []).find(
+      (t: any) => t.slug === 'reddit' && t.connection?.isActive,
+    );
 
-  return {
-    connected: !!active,
-    connectionId: active?.id ?? null,
-  };
+    return {
+      connected: !!reddit,
+      connectionId: reddit?.connection?.connectedAccount?.id ?? null,
+    };
+  } catch {
+    // Fallback to lower-level API if session approach fails
+    const accounts = await composio.connectedAccounts.list({
+      userIds: [userId],
+      toolkitSlugs: ['reddit'],
+    });
+
+    const items = 'items' in accounts ? (accounts as any).items : accounts;
+    const active = (Array.isArray(items) ? items : []).find(
+      (acc: { status: string; id: string }) => acc.status === 'ACTIVE',
+    );
+
+    return {
+      connected: !!active,
+      connectionId: active?.id ?? null,
+    };
+  }
 }
 
 /**
@@ -112,5 +99,4 @@ export async function checkRedditConnection(
  */
 export function resetComposioInstance(): void {
   _instance = null;
-  _redditAuthConfigId = null;
 }
