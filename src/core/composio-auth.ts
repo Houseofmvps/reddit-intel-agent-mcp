@@ -28,6 +28,33 @@ export function getComposio(): Composio {
   return _instance;
 }
 
+// Cache the Reddit auth config ID
+let _redditAuthConfigId: string | null = null;
+
+/**
+ * Get the auth config ID for Reddit from Composio.
+ * Uses Composio-managed auth (no custom Reddit app needed).
+ */
+async function getRedditAuthConfigId(): Promise<string> {
+  if (_redditAuthConfigId) return _redditAuthConfigId;
+
+  const composio = getComposio();
+  const configs = await composio.authConfigs.list({ toolkit: 'reddit' });
+  const items = 'items' in configs ? configs.items : configs;
+
+  if (!Array.isArray(items) || items.length === 0) {
+    throw new Error('No Reddit auth config found in Composio. Please set up Reddit in your Composio dashboard.');
+  }
+
+  // Prefer Composio-managed config, fall back to first available
+  const managed = items.find((c: any) => c.status === 'ENABLED');
+  const config = managed || items[0];
+  _redditAuthConfigId = (config as any).id || (config as any).uuid;
+
+  console.log(`[composio] Using Reddit auth config: ${_redditAuthConfigId}`);
+  return _redditAuthConfigId!;
+}
+
 /**
  * Initiate a Composio connection for Reddit OAuth.
  * Returns a redirect URL the user should visit to authorize.
@@ -37,10 +64,11 @@ export async function getRedditConnectLink(
   redirectUrl: string,
 ): Promise<{ redirectUrl: string; connectionId: string }> {
   const composio = getComposio();
+  const authConfigId = await getRedditAuthConfigId();
 
   const connectionRequest = await composio.connectedAccounts.initiate(
     userId,
-    'reddit',  // toolkit slug
+    authConfigId,
     {
       callbackUrl: redirectUrl,
     },
@@ -82,4 +110,5 @@ export async function checkRedditConnection(
  */
 export function resetComposioInstance(): void {
   _instance = null;
+  _redditAuthConfigId = null;
 }
