@@ -1,7 +1,7 @@
 /**
  * Dashboard API — authenticated routes for Pro dashboard
  *
- * All routes require a valid Better Auth session.
+ * All routes require a valid session (cookie-based, no Better Auth).
  * Pattern matches src/api/rest.ts — returns boolean (handled or not).
  */
 
@@ -150,7 +150,7 @@ export async function handleDashboardRequest(
 
       // Set the session cookie and redirect to dashboard
       const isSecure = (process.env.BETTER_AUTH_URL || '').startsWith('https');
-      const cookieValue = `better-auth.session_token=${sessionToken}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30 * 24 * 3600}${isSecure ? '; Secure' : ''}; Domain=${isSecure ? '.buildradar.xyz' : ''}`;
+      const cookieValue = `buildradar.session=${sessionToken}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30 * 24 * 3600}${isSecure ? '; Secure' : ''}; Domain=${isSecure ? '.buildradar.xyz' : ''}`;
 
       console.log(`[auth] Reddit login successful for u/${redditUsername}, redirecting to dashboard`);
       res.writeHead(302, {

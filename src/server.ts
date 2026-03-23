@@ -260,21 +260,50 @@ export async function startHttp(port: number) {
     const apiKeyRequired = !!apiKey;
     const publicPaths = ['/health', '/', '/.well-known/ai-plugin.json', '/.well-known/smithery.json', '/.well-known/mcp.json', '/api/openapi.json', '/api/tools', '/api/prompts'];
 
-    // ─── Better Auth routes (bypass API key) ────────────────
+    // ─── Simple auth routes (session check + sign-out) ────────────────
     if (url.startsWith('/api/auth/')) {
+      // CORS
+      const origin = req.headers.origin ?? '';
+      const allowedOrigins = ['https://buildradar.xyz', 'https://app.buildradar.xyz', 'http://localhost:5173', 'http://localhost:3000'];
+      if (allowedOrigins.includes(origin)) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+      }
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+      if (req.method === 'OPTIONS') { res.writeHead(200); res.end(); return; }
+
       try {
-        const { toNodeHandler } = await import('better-auth/node');
-        const { getAuth } = await import('./auth/index.js');
-        const auth = getAuth();
-        const handler = toNodeHandler(auth);
-        await handler(req, res);
+        const { getSessionFromRequest, SESSION_COOKIE } = await import('./auth/session.js');
+
+        if (url === '/api/auth/get-session' || url.startsWith('/api/auth/get-session?')) {
+          const session = await getSessionFromRequest(req);
+          if (!session) {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end('null');
+          } else {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ user: session.user }));
+          }
+          return;
+        }
+
+        if (url === '/api/auth/sign-out' && req.method === 'POST') {
+          // Clear cookie
+          const isSecure = (process.env.BETTER_AUTH_URL || '').startsWith('https');
+          const clearCookie = `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${isSecure ? '; Secure; Domain=.buildradar.xyz' : ''}`;
+          res.writeHead(200, { 'Set-Cookie': clearCookie, 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: true }));
+          return;
+        }
+
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Not found' }));
       } catch (err) {
-        console.error('[auth] Error handling auth request:', url, err);
+        console.error('[auth] Error:', url, err);
         if (!res.headersSent) {
           res.writeHead(500, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: 'Auth error', detail: String(err) }));
-        } else if (!res.writableEnded) {
-          res.end();
+          res.end(JSON.stringify({ error: 'Auth error' }));
         }
       }
       return;
