@@ -66,7 +66,9 @@ export async function getRedditConnectLink(
   const composio = getComposio();
   const authConfigId = await getRedditAuthConfigId();
 
-  const connectionRequest = await composio.connectedAccounts.initiate(
+  // Use `link` (Composio Connect Link) for user-facing OAuth flows
+  // `initiate` is for server-side token injection, `link` generates proper redirect URLs
+  const connectionRequest = await composio.connectedAccounts.link(
     userId,
     authConfigId,
     {
