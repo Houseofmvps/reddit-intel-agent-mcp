@@ -15,6 +15,7 @@ import {
   clusterPosts,
   type OpportunityInput,
 } from '../intelligence/index.js';
+import { generateDossier } from '../intelligence/dossier.js';
 import type { PainPoint, Workaround, ProductTier, RedditPost } from '../types/index.js';
 import {
   findPainPointsSchema,
@@ -454,40 +455,34 @@ export class IntelligenceTools {
     }
 
     const deduped = this.deduplicate(allPosts);
-    const leads: Array<{
-      title: string;
-      source_url: string;
-      subreddit: string;
-      author: string;
-      lead_score: ReturnType<typeof scoreLeadPost>;
-      created_utc: number;
-    }> = [];
 
-    for (const post of deduped) {
-      const leadScore = scoreLeadPost(post);
-      if (leadScore.total >= 20) {
-        leads.push({
-          title: post.title,
-          source_url: `https://reddit.com${post.permalink}`,
-          subreddit: post.subreddit,
-          author: post.author,
-          lead_score: leadScore,
-          created_utc: post.created_utc,
+    // Score posts and filter for buyer intent, then generate dossiers
+    const dossiers = deduped
+      .filter(post => scoreLeadPost(post).total >= 20)
+      .map(post => {
+        const leadScore = scoreLeadPost(post);
+        return generateDossier({
+          post,
+          signals: leadScore.signals,
+          patternWeights: Object.fromEntries(leadScore.signals.map(s => [s, 3])),
+          userHistory: null,
+          productDescription: params.solution_category,
         });
-      }
-    }
+      });
 
-    leads.sort((a, b) => b.lead_score.total - a.lead_score.total);
+    // Sort by conversion score, highest first
+    dossiers.sort((a, b) => b.conversionScore - a.conversionScore);
 
     return {
       solution_category: params.solution_category,
-      leads: leads.slice(0, 25),
-      total_found: leads.length,
-      quality_breakdown: {
-        hot: leads.filter(l => l.lead_score.total >= 70).length,
-        warm: leads.filter(l => l.lead_score.total >= 40 && l.lead_score.total < 70).length,
-        cool: leads.filter(l => l.lead_score.total < 40).length,
-      },
+      leads: dossiers.slice(0, this.tier === 'free' ? 5 : dossiers.length),
+      total_found: dossiers.length,
+      hot_leads: dossiers.filter(d => d.conversionLabel === 'hot').length,
+      warm_leads: dossiers.filter(d => d.conversionLabel === 'warm').length,
+      cold_leads: dossiers.filter(d => d.conversionLabel === 'cold').length,
+      note: this.tier === 'free'
+        ? `Showing top 5 of ${dossiers.length}. Get Pro ($14.99/mo) for unlimited dossiers at buildradar.xyz`
+        : undefined,
     };
   }
 
