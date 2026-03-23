@@ -9,7 +9,7 @@ import type { IncomingMessage, ServerResponse } from 'http';
 import { getSessionFromRequest } from '../auth/session.js';
 import { getDb, schema } from '../db/index.js';
 import { encrypt, decrypt } from '../db/crypto.js';
-import { eq, and, desc, sql } from 'drizzle-orm';
+import { eq, and, desc } from 'drizzle-orm';
 import { buildAuthorizationUrl, exchangeCodeForTokens, getRedditUsername, isRedditOAuthConfigured } from './reddit-oauth.js';
 import { randomBytes } from 'crypto';
 import { runSingleMonitorScan } from '../monitor/scanner.js';
@@ -44,18 +44,12 @@ export async function handleDashboardRequest(
     try {
       const { getRedditConnectLink } = await import('../core/composio-auth.js');
       const { randomUUID } = await import('crypto');
-      // Use a temp ID; on callback we'll resolve the real user
+      // Use a temp ID; embed it in the callback URL so we can retrieve it without DB lookup
       const tempId = `pending_${randomUUID()}`;
-      const callbackUrl = `${process.env.BETTER_AUTH_URL || 'https://api.buildradar.xyz'}/dashboard/composio/callback`;
+      const baseCallback = `${process.env.BETTER_AUTH_URL || 'https://api.buildradar.xyz'}/dashboard/composio/callback`;
+      const callbackUrl = `${baseCallback}?composio_user=${encodeURIComponent(tempId)}`;
       const result = await getRedditConnectLink(tempId, callbackUrl);
-      // Store the temp ID → connectionId mapping so callback can look it up
-      const db = getDb();
-      await db.insert(schema.verification).values({
-        id: randomUUID(),
-        identifier: `composio_login:${result.connectionId}`,
-        value: tempId,
-        expiresAt: new Date(Date.now() + 10 * 60_000), // 10 min
-      });
+      console.log(`[composio] login initiated: tempId=${tempId}, redirectUrl=${result.redirectUrl?.slice(0, 80)}...`);
       res.writeHead(302, { Location: result.redirectUrl });
       res.end();
     } catch (err) {
@@ -78,31 +72,25 @@ export async function handleDashboardRequest(
       const db = getDb();
 
       // Parse query params from callback
+      // Composio appends status & connected_account_id; we embedded composio_user
       const callbackUrl = new URL(url, `${process.env.BETTER_AUTH_URL || 'https://api.buildradar.xyz'}`);
       const status = callbackUrl.searchParams.get('status');
       const connectedAccountId = callbackUrl.searchParams.get('connected_account_id');
+      const composioUserId = callbackUrl.searchParams.get('composio_user') || '';
 
-      console.log(`[composio] callback: status=${status}, connected_account_id=${connectedAccountId}`);
+      console.log(`[composio] callback: status=${status}, connected_account_id=${connectedAccountId}, composio_user=${composioUserId}`);
 
-      if (status !== 'success' || !connectedAccountId) {
-        console.error('[composio] callback: OAuth failed or missing params');
-        res.writeHead(302, { Location: `${frontendOrigin}/login?error=connection_failed` });
+      if (!composioUserId) {
+        console.error('[composio] callback: missing composio_user param');
+        res.writeHead(302, { Location: `${frontendOrigin}/login?error=session_expired` });
         res.end();
         return true;
       }
 
-      // Find the pending login to get the Composio userId we used
-      const [pending] = await db
-        .select()
-        .from(schema.verification)
-        .where(sql`identifier LIKE 'composio_login:%' AND expires_at > NOW()`)
-        .limit(1);
-
-      const composioUserId = pending?.value || '';
-
-      if (!composioUserId) {
-        console.error('[composio] callback: no pending login found');
-        res.writeHead(302, { Location: `${frontendOrigin}/login?error=session_expired` });
+      // If Composio reports failure, redirect to login
+      if (status === 'failed') {
+        console.error('[composio] callback: Composio reported failure');
+        res.writeHead(302, { Location: `${frontendOrigin}/login?error=connection_failed` });
         res.end();
         return true;
       }
@@ -159,9 +147,6 @@ export async function handleDashboardRequest(
         ipAddress: req.headers['x-forwarded-for']?.toString().split(',')[0] || req.socket.remoteAddress || null,
         userAgent: req.headers['user-agent'] || null,
       });
-
-      // Clean up pending verification entries
-      await db.execute(sql`DELETE FROM verification WHERE identifier LIKE 'composio_login:%'`);
 
       // Set the session cookie and redirect to dashboard
       const isSecure = (process.env.BETTER_AUTH_URL || '').startsWith('https');
