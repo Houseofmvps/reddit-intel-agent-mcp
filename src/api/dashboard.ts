@@ -113,39 +113,19 @@ export async function handleDashboardRequest(
         console.warn('[composio] Could not get connected account:', (err as Error).message);
       }
 
-      // ── Step 2: Get Reddit username via direct Reddit API (most reliable) ──
-      if (redditAccessToken) {
-        try {
-          const redditRes = await fetch('https://oauth.reddit.com/api/v1/me', {
-            headers: {
-              Authorization: `Bearer ${redditAccessToken}`,
-              'User-Agent': 'BuildRadar/1.5.1 by BuildRadar',
-            },
-          });
-          if (redditRes.ok) {
-            const meData = await redditRes.json() as Record<string, unknown>;
-            redditUsername = (meData?.name as string) || '';
-            console.log(`[composio] Got Reddit username via /api/v1/me: ${redditUsername}`);
-          } else {
-            console.warn(`[composio] Reddit /api/v1/me returned ${redditRes.status}`);
-          }
-        } catch (err) {
-          console.warn('[composio] Reddit /api/v1/me failed:', (err as Error).message);
-        }
-      }
-
-      // ── Step 3: Try REDDIT_GET_ME via Composio tool execution ──
+      // ── Step 2: Get Reddit username via Composio tool execution ──
       if (!redditUsername && composioEntityId) {
         try {
-          const meResult = await composio.tools.execute('REDDIT_GET_ME', {
+          const meResult = await composio.tools.execute('REDDIT_GET_REDDIT_USER_ABOUT', {
             userId: composioEntityId,
-            arguments: {},
+            arguments: { username: 'me' },
+            version: '20260316_00',
           });
-          const meData = (meResult?.data || meResult) as Record<string, unknown>;
-          redditUsername = (meData?.name as string) || (meData?.username as string) || '';
-          if (redditUsername) console.log(`[composio] Got Reddit username via REDDIT_GET_ME: ${redditUsername}`);
+          const meData = (meResult as any)?.data?.data || (meResult as any)?.data || {};
+          redditUsername = meData?.name || '';
+          if (redditUsername) console.log(`[composio] Got Reddit username via REDDIT_GET_REDDIT_USER_ABOUT: ${redditUsername}`);
         } catch (err) {
-          console.warn('[composio] REDDIT_GET_ME failed:', (err as Error).message);
+          console.warn('[composio] REDDIT_GET_REDDIT_USER_ABOUT failed:', (err as Error).message);
         }
       }
 

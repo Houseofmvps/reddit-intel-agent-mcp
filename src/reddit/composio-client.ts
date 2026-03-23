@@ -2,14 +2,23 @@
  * Composio-backed Reddit Client
  *
  * Drop-in alternative to RedditClient that uses Composio's managed OAuth
- * instead of direct Reddit API access. Returns clean arrays (not Reddit's
- * wrapped Listing format) — the scanner adapter (Task 3) handles the
- * interface difference.
+ * instead of direct Reddit API access.
+ *
+ * Available Composio Reddit tools (as of 2026-03-24):
+ *   REDDIT_GET_NEW          - Get new posts from subreddit (params: subreddit, limit, after, count, before)
+ *   REDDIT_GET              - Get Reddit listing by sort (params: sort, limit, show, after, count, before, time_filter)
+ *   REDDIT_GET_R_TOP        - Get top posts (params: subreddit, time, limit, after, count, before)
+ *   REDDIT_GET_CONTROVERSIAL_POSTS - Get controversial posts
+ *   REDDIT_GET_SUBREDDITS_SEARCH  - Search subreddits (NOT posts)
+ *   REDDIT_GET_REDDIT_USER_ABOUT  - Get user info (params: username)
+ *   REDDIT_EDIT_REDDIT_COMMENT_OR_POST - Edit a comment/post
  */
 
 import type { Composio } from '@composio/core';
 import type { RedditPost, RedditComment } from '../types/index.js';
 import { IntelCache } from '../core/cache.js';
+
+const TOOL_VERSION = '20260316_00';
 
 export interface ComposioSearchOptions {
   limit?: number;
@@ -36,57 +45,67 @@ export class ComposioRedditClient {
   }
 
   /**
-   * Search Reddit via Composio's REDDIT_SEARCH_REDDIT tool.
+   * Search Reddit by fetching new posts from a subreddit and filtering by query.
+   * Note: Composio doesn't have a direct post search tool, so we fetch new posts
+   * and filter client-side. The query format "subreddit:X keyword" is parsed.
    */
   async search(query: string, opts: ComposioSearchOptions = {}): Promise<RedditPost[]> {
-    const { limit = 25, time, sort = 'relevance' } = opts;
+    const { limit = 25 } = opts;
 
-    const cacheKey = `composio:search:${query}:${sort}`;
+    const cacheKey = `composio:search:${query}`;
     const cached = this.cache.get<RedditPost[]>(cacheKey);
     if (cached) return cached;
 
-    const result = await this.composio.tools.execute('REDDIT_SEARCH_REDDIT', {
-      userId: this.userId,
-      arguments: {
-        q: query,
-        limit,
-        sort,
-        ...(time ? { t: time } : {}),
-      },
-    });
+    // Parse "subreddit:X keyword" format
+    const subMatch = query.match(/subreddit:(\S+)/);
+    const subreddit = subMatch ? subMatch[1] : '';
+    const keyword = query.replace(/subreddit:\S+\s*/, '').trim().toLowerCase();
 
-    const posts = this.extractPosts(result);
-    const normalized = posts.map((p: Record<string, unknown>) => this.normalizePost(p));
-    this.cache.set(cacheKey, normalized);
-    return normalized;
+    if (!subreddit) return [];
+
+    // Fetch new posts from the subreddit
+    const allPosts = await this.browseSubreddit(subreddit, 'new', { limit: Math.min(limit * 2, 100) });
+
+    // Filter by keyword in title or selftext
+    const filtered = keyword
+      ? allPosts.filter(p =>
+          p.title.toLowerCase().includes(keyword) ||
+          (p.selftext?.toLowerCase().includes(keyword) ?? false)
+        )
+      : allPosts;
+
+    const results = filtered.slice(0, limit);
+    this.cache.set(cacheKey, results);
+    return results;
   }
 
   /**
-   * Browse a subreddit via Composio's REDDIT_GET_SUBREDDIT_POSTS tool.
+   * Browse a subreddit via REDDIT_GET_NEW.
    */
   async browseSubreddit(
     subreddit: string,
-    sort: string = 'hot',
+    sort: string = 'new',
     opts: ComposioSubredditOptions = {},
   ): Promise<RedditPost[]> {
     subreddit = subreddit.replace(/^r\//, '').trim();
     if (!subreddit) throw new Error('Subreddit name is required');
 
-    const { limit = 25, time, after } = opts;
+    const { limit = 25, after } = opts;
 
     const cacheKey = `composio:browse:${subreddit}:${sort}`;
     const cached = this.cache.get<RedditPost[]>(cacheKey);
     if (cached) return cached;
 
-    const result = await this.composio.tools.execute('REDDIT_GET_SUBREDDIT_POSTS', {
+    // Use REDDIT_GET_NEW for 'new' sort, REDDIT_GET_R_TOP for 'top'
+    const toolName = sort === 'top' ? 'REDDIT_GET_R_TOP' : 'REDDIT_GET_NEW';
+    const args: Record<string, unknown> = { subreddit, limit };
+    if (after) args.after = after;
+    if (sort === 'top') args.time = 'day';
+
+    const result = await this.composio.tools.execute(toolName, {
       userId: this.userId,
-      arguments: {
-        subreddit,
-        sort,
-        limit,
-        ...(time ? { t: time } : {}),
-        ...(after ? { after } : {}),
-      },
+      arguments: args,
+      version: TOOL_VERSION,
     });
 
     const posts = this.extractPosts(result);
@@ -96,23 +115,13 @@ export class ComposioRedditClient {
   }
 
   /**
-   * Get a single post and its comments.
+   * Get a single post — not directly supported, returns empty.
    */
-  async getPost(postId: string): Promise<{ post: RedditPost; comments: RedditComment[] }> {
-    const result = await this.composio.tools.execute('REDDIT_GET_POST', {
-      userId: this.userId,
-      arguments: {
-        id: postId,
-      },
-    });
-
-    const data = this.extractData(result);
-    const postData = data.post ?? data;
-    const commentsData = Array.isArray(data.comments) ? data.comments : [];
-
+  async getPost(_postId: string): Promise<{ post: RedditPost; comments: RedditComment[] }> {
+    // No single-post retrieval tool available in Composio
     return {
-      post: this.normalizePost(postData as Record<string, unknown>),
-      comments: commentsData.map((c: Record<string, unknown>) => this.normalizeComment(c)),
+      post: this.normalizePost({}),
+      comments: [],
     };
   }
 
@@ -124,25 +133,22 @@ export class ComposioRedditClient {
     const cached = this.cache.get<RedditPost[]>(cacheKey);
     if (cached) return cached;
 
-    const result = await this.composio.tools.execute('REDDIT_GET_USER_POSTS', {
-      userId: this.userId,
-      arguments: {
-        username,
-      },
-    });
-
-    const posts = this.extractPosts(result);
-    const normalized = posts.map((p: Record<string, unknown>) => this.normalizePost(p));
-    this.cache.set(cacheKey, normalized);
-    return normalized;
+    try {
+      const result = await this.composio.tools.execute('REDDIT_GET_REDDIT_USER_ABOUT', {
+        userId: this.userId,
+        arguments: { username },
+        version: TOOL_VERSION,
+      });
+      // This returns user info, not posts — return empty for now
+      void result;
+      return [];
+    } catch {
+      return [];
+    }
   }
 
   // ─── Normalizers ────────────────────────────────────────────────
 
-  /**
-   * Convert a raw Composio response object into our RedditPost type.
-   * Handles variations in field names across Composio tool responses.
-   */
   normalizePost(p: Record<string, unknown>): RedditPost {
     const subreddit = String(p.subreddit ?? p.subreddit_name ?? '');
     const id = String(p.id ?? p.name ?? '');
@@ -176,9 +182,6 @@ export class ComposioRedditClient {
     };
   }
 
-  /**
-   * Convert a raw comment object into our RedditComment type.
-   */
   normalizeComment(c: Record<string, unknown>): RedditComment {
     const replies = Array.isArray(c.replies)
       ? c.replies.map((r: Record<string, unknown>) => this.normalizeComment(r))
@@ -202,22 +205,20 @@ export class ComposioRedditClient {
 
   // ─── Response extraction helpers ────────────────────────────────
 
-  /**
-   * Extract an array of posts from various Composio response shapes.
-   */
   private extractPosts(result: unknown): Array<Record<string, unknown>> {
     const data = this.extractData(result);
 
-    // Direct array
     if (Array.isArray(data)) return data;
-
-    // Nested in common keys
     if (Array.isArray(data.posts)) return data.posts;
-    if (Array.isArray(data.children)) return data.children;
+    if (Array.isArray(data.children)) {
+      return data.children.map((child: Record<string, unknown>) => {
+        return (child.data ?? child) as Record<string, unknown>;
+      });
+    }
     if (Array.isArray(data.data)) return data.data;
     if (Array.isArray(data.results)) return data.results;
 
-    // Reddit listing format from Composio
+    // Reddit listing format: { data: { children: [...] } }
     if (data.data && typeof data.data === 'object') {
       const inner = data.data as Record<string, unknown>;
       if (Array.isArray(inner.children)) {
@@ -230,16 +231,12 @@ export class ComposioRedditClient {
     return [];
   }
 
-  /**
-   * Unwrap the top-level Composio response envelope.
-   */
   private extractData(result: unknown): Record<string, unknown> {
     if (result == null) return {};
     if (typeof result !== 'object') return {};
 
     const obj = result as Record<string, unknown>;
 
-    // Composio wraps in { data: ... } or { result: ... }
     if (obj.data != null && typeof obj.data === 'object' && !Array.isArray(obj.data)) {
       return obj.data as Record<string, unknown>;
     }
