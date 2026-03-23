@@ -15,7 +15,8 @@ export const user = pgTable('user', {
   image: text('image'),
   tier: text('tier').notNull().default('free'), // 'free' | 'pro'
   polarCustomerId: text('polar_customer_id'),
-  composioEntityId: text('composio_entity_id'), // Composio user ID for Reddit API access
+  composioEntityId: text('composio_entity_id'), // Composio user/entity ID for tool execution
+  composioConnectedAccountId: text('composio_connected_account_id'), // Composio connected account ID for status checks
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });

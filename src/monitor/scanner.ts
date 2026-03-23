@@ -202,14 +202,26 @@ async function scanUserMonitors(
   // Try Composio first (preferred — no Reddit app approval needed)
   if (process.env.COMPOSIO_API_KEY) {
     try {
-      // Look up user's composioEntityId
       const [usr] = await db.select().from(schema.user).where(eq(schema.user.id, userId));
-      const composioId = usr?.composioEntityId;
+      const connAccountId = usr?.composioConnectedAccountId;
+      const entityId = usr?.composioEntityId;
 
-      if (composioId) {
-        const { connected } = await checkRedditConnection(composioId);
+      if (connAccountId && entityId) {
+        // Check connection status via connected account ID
+        let connected = false;
+        try {
+          const composio = getComposio();
+          const account = await (composio.connectedAccounts as any).retrieve(connAccountId);
+          connected = account?.status === 'ACTIVE';
+        } catch {
+          // Fallback to entity-based check
+          const result = await checkRedditConnection(entityId);
+          connected = result.connected;
+        }
+
         if (connected) {
-          const composioClient = new ComposioRedditClient(getComposio(), composioId);
+          // Use entity ID for tool execution (Composio maps tools via entity ID)
+          const composioClient = new ComposioRedditClient(getComposio(), entityId);
           for (const monitor of monitors) {
             try {
               await scanMonitorComposio(userId, monitor, composioClient, stats);
@@ -697,9 +709,23 @@ export async function getClientForUser(
   // Try Composio first
   if (process.env.COMPOSIO_API_KEY) {
     try {
-      const { connected } = await checkRedditConnection(userId);
-      if (connected) {
-        return { type: 'composio', client: new ComposioRedditClient(getComposio(), userId) };
+      const db = getDb();
+      const [usr] = await db.select().from(schema.user).where(eq(schema.user.id, userId));
+      const connAccountId = usr?.composioConnectedAccountId;
+      const entityId = usr?.composioEntityId;
+
+      if (connAccountId && entityId) {
+        let connected = false;
+        try {
+          const account = await (getComposio().connectedAccounts as any).retrieve(connAccountId);
+          connected = account?.status === 'ACTIVE';
+        } catch {
+          const result = await checkRedditConnection(entityId);
+          connected = result.connected;
+        }
+        if (connected) {
+          return { type: 'composio', client: new ComposioRedditClient(getComposio(), entityId) };
+        }
       }
     } catch {
       // Fall through to direct

@@ -55,7 +55,7 @@ export async function handleDashboardRequest(
     } catch (err) {
       console.error('[composio] login initiation error:', err);
       const frontendOrigin = process.env.FRONTEND_URL || 'https://buildradar.xyz';
-      res.writeHead(302, { Location: `${frontendOrigin}/login?error=reddit_unavailable` });
+      res.writeHead(302, { Location: `${frontendOrigin}/app/login?error=reddit_unavailable` });
       res.end();
     }
     return true;
@@ -72,49 +72,83 @@ export async function handleDashboardRequest(
       const db = getDb();
 
       // Parse query params from callback
-      // Composio appends status & connected_account_id; we embedded composio_user
       const callbackUrl = new URL(url, `${process.env.BETTER_AUTH_URL || 'https://api.buildradar.xyz'}`);
       const status = callbackUrl.searchParams.get('status');
       const connectedAccountId = callbackUrl.searchParams.get('connected_account_id');
-      const composioUserId = callbackUrl.searchParams.get('composio_user') || '';
+      const composioEntityId = callbackUrl.searchParams.get('composio_user') || '';
 
-      console.log(`[composio] callback: status=${status}, connected_account_id=${connectedAccountId}, composio_user=${composioUserId}`);
+      console.log(`[composio] callback: status=${status}, connected_account_id=${connectedAccountId}, composio_user=${composioEntityId}`);
 
-      if (!composioUserId) {
-        console.error('[composio] callback: missing composio_user param');
-        res.writeHead(302, { Location: `${frontendOrigin}/login?error=session_expired` });
+      if (!connectedAccountId) {
+        console.error('[composio] callback: missing connected_account_id');
+        res.writeHead(302, { Location: `${frontendOrigin}/app/login?error=connection_failed` });
         res.end();
         return true;
       }
 
-      // If Composio reports failure, redirect to login
       if (status === 'failed') {
         console.error('[composio] callback: Composio reported failure');
-        res.writeHead(302, { Location: `${frontendOrigin}/login?error=connection_failed` });
+        res.writeHead(302, { Location: `${frontendOrigin}/app/login?error=connection_failed` });
         res.end();
         return true;
+      }
+
+      // Verify the connected account is active via Composio API
+      let accountStatus = 'UNKNOWN';
+      try {
+        const account = await (composio.connectedAccounts as any).retrieve(connectedAccountId);
+        accountStatus = account?.status || 'UNKNOWN';
+        console.log(`[composio] Connected account ${connectedAccountId} status: ${accountStatus}`);
+      } catch (err) {
+        console.warn('[composio] Could not verify connected account, proceeding:', err);
       }
 
       // Get Reddit username via Composio tool execution
-      let redditUsername = 'reddit_user';
-      try {
-        const meResult = await composio.tools.execute('REDDIT_GET_ME', {
-          userId: composioUserId,
-          arguments: {},
-        });
-        const meData = (meResult?.data || meResult) as Record<string, unknown>;
-        redditUsername = (meData?.name as string) || (meData?.username as string) || 'reddit_user';
-        console.log(`[composio] Got Reddit username: ${redditUsername}`);
-      } catch (err) {
-        console.error('[composio] failed to get Reddit username, using fallback:', err);
-        // Use the composioUserId as fallback identifier
-        redditUsername = `user_${composioUserId.replace('pending_', '').slice(0, 8)}`;
+      // Use the entity ID (composio_user) which is what Composio maps tools to
+      let redditUsername = '';
+      if (composioEntityId) {
+        try {
+          const meResult = await composio.tools.execute('REDDIT_GET_ME', {
+            userId: composioEntityId,
+            arguments: {},
+          });
+          const meData = (meResult?.data || meResult) as Record<string, unknown>;
+          redditUsername = (meData?.name as string) || (meData?.username as string) || '';
+          console.log(`[composio] Got Reddit username via tools.execute: ${redditUsername}`);
+        } catch (err) {
+          console.warn('[composio] REDDIT_GET_ME failed, will try REST fallback:', (err as Error).message);
+        }
+      }
+
+      // Fallback: get username from Composio connected account metadata
+      if (!redditUsername) {
+        try {
+          const account = await (composio.connectedAccounts as any).retrieve(connectedAccountId);
+          const meta = account?.data || account?.connectionParams || {};
+          redditUsername = meta?.username || meta?.name || meta?.screen_name || '';
+          if (redditUsername) {
+            console.log(`[composio] Got Reddit username from account metadata: ${redditUsername}`);
+          }
+        } catch (err) {
+          console.warn('[composio] Could not get username from account metadata:', (err as Error).message);
+        }
+      }
+
+      // Last resort fallback
+      if (!redditUsername) {
+        redditUsername = `reddit_${connectedAccountId.slice(-8)}`;
+        console.log(`[composio] Using fallback username: ${redditUsername}`);
       }
 
       const email = `${redditUsername}@reddit.buildradar.xyz`;
 
-      // Find or create user
-      let [existingUser] = await db.select().from(schema.user).where(eq(schema.user.email, email));
+      // Find existing user by composio connected account ID, or by email
+      let [existingUser] = await db.select().from(schema.user)
+        .where(eq(schema.user.composioConnectedAccountId, connectedAccountId));
+
+      if (!existingUser) {
+        [existingUser] = await db.select().from(schema.user).where(eq(schema.user.email, email));
+      }
 
       if (!existingUser) {
         const userId = randomUUID();
@@ -124,17 +158,25 @@ export async function handleDashboardRequest(
           email,
           emailVerified: false,
           tier: 'free',
-          composioEntityId: composioUserId,
+          composioEntityId: composioEntityId || null,
+          composioConnectedAccountId: connectedAccountId,
         });
         [existingUser] = await db.select().from(schema.user).where(eq(schema.user.id, userId));
         console.log(`[auth] Created new user for Reddit u/${redditUsername} (${userId})`);
       } else {
+        // Update existing user with latest Composio IDs
         await db.update(schema.user)
-          .set({ composioEntityId: composioUserId, updatedAt: new Date() })
+          .set({
+            composioEntityId: composioEntityId || existingUser.composioEntityId,
+            composioConnectedAccountId: connectedAccountId,
+            name: redditUsername !== existingUser.name && !redditUsername.startsWith('reddit_') ? redditUsername : existingUser.name,
+            updatedAt: new Date(),
+          })
           .where(eq(schema.user.id, existingUser.id));
+        console.log(`[auth] Updated existing user ${existingUser.id} with new Composio connection`);
       }
 
-      // Create a Better Auth session
+      // Create session
       const sessionToken = randomUUID();
       const sessionId = randomUUID();
       const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
@@ -160,7 +202,7 @@ export async function handleDashboardRequest(
       res.end();
     } catch (err) {
       console.error('[composio] callback error:', err);
-      res.writeHead(302, { Location: `${frontendOrigin}/login?error=auth_failed` });
+      res.writeHead(302, { Location: `${frontendOrigin}/app/login?error=auth_failed` });
       res.end();
     }
     return true;
@@ -517,9 +559,9 @@ export async function handleDashboardRequest(
       const { getRedditConnectLink } = await import('../core/composio-auth.js');
       const { randomUUID } = await import('crypto');
       const composioId = `reconnect_${randomUUID()}`;
-      const redirectUrl = `${process.env.BETTER_AUTH_URL || 'https://api.buildradar.xyz'}/dashboard/composio/callback`;
-      const result = await getRedditConnectLink(composioId, redirectUrl);
-      // Update the user's composioEntityId
+      const baseCallback = `${process.env.BETTER_AUTH_URL || 'https://api.buildradar.xyz'}/dashboard/composio/callback`;
+      const callbackUrl = `${baseCallback}?composio_user=${encodeURIComponent(composioId)}`;
+      const result = await getRedditConnectLink(composioId, callbackUrl);
       await db.update(schema.user).set({ composioEntityId: composioId }).where(eq(schema.user.id, userId));
       json(res, 200, { url: result.redirectUrl });
     } catch (err) {
@@ -532,15 +574,32 @@ export async function handleDashboardRequest(
   // ── GET /dashboard/composio/status — Check Composio Reddit connection ──
   if (url === '/dashboard/composio/status' && req.method === 'GET') {
     try {
-      const { checkRedditConnection } = await import('../core/composio-auth.js');
       const [usr] = await db.select().from(schema.user).where(eq(schema.user.id, userId));
-      const composioId = usr?.composioEntityId;
-      if (!composioId) {
+      const connAccountId = usr?.composioConnectedAccountId;
+
+      if (!connAccountId) {
         json(res, 200, { connected: false, connectionId: null });
         return true;
       }
-      const status = await checkRedditConnection(composioId);
-      json(res, 200, status);
+
+      // Check connection status directly via connected account ID
+      let connected = false;
+      try {
+        const { getComposio } = await import('../core/composio-auth.js');
+        const composio = getComposio();
+        const account = await (composio.connectedAccounts as any).retrieve(connAccountId);
+        connected = account?.status === 'ACTIVE';
+      } catch {
+        // If retrieve fails, fall back to checking via entity ID
+        const { checkRedditConnection } = await import('../core/composio-auth.js');
+        const entityId = usr?.composioEntityId;
+        if (entityId) {
+          const result = await checkRedditConnection(entityId);
+          connected = result.connected;
+        }
+      }
+
+      json(res, 200, { connected, connectionId: connAccountId });
     } catch (err) {
       console.error('[composio] status check error:', err);
       json(res, 200, { connected: false, connectionId: null });
