@@ -93,53 +93,63 @@ export async function handleDashboardRequest(
         return true;
       }
 
-      // Verify the connected account and extract the real entity ID + username
+      // ── Step 1: Verify the connected account and extract access token ──
+      // SDK method is .get(), not .retrieve()
       let accountStatus = 'UNKNOWN';
-      let realEntityId = composioEntityId; // may still be pending_xxx
+      let redditAccessToken = '';
       let redditUsername = '';
       try {
-        const account = await (composio.connectedAccounts as any).retrieve(connectedAccountId);
+        const account = await composio.connectedAccounts.get(connectedAccountId);
         accountStatus = account?.status || 'UNKNOWN';
-        console.log(`[composio] Connected account ${connectedAccountId} status: ${accountStatus}, full keys: ${Object.keys(account || {}).join(',')}`);
-        console.log(`[composio] Connected account data:`, JSON.stringify(account, null, 2).slice(0, 2000));
+        console.log(`[composio] Connected account ${connectedAccountId} status: ${accountStatus}`);
 
-        // Extract the real entity ID from the connected account
-        if (account?.entityId) {
-          realEntityId = account.entityId;
-          console.log(`[composio] Resolved real entity ID: ${realEntityId}`);
-        } else if (account?.entity?.id) {
-          realEntityId = account.entity.id;
-          console.log(`[composio] Resolved real entity ID from entity.id: ${realEntityId}`);
-        }
-
-        // Try to get username from connected account metadata
-        const meta = account?.data || account?.connectionParams || account?.metadata || {};
-        const connParams = account?.connectionParams || {};
-        redditUsername = meta?.username || meta?.name || meta?.screen_name
-          || connParams?.username || connParams?.name || '';
-        if (redditUsername) {
-          console.log(`[composio] Got Reddit username from account metadata: ${redditUsername}`);
+        // Access token is in account.data (not connectionParams)
+        const data = (account as any)?.data || {};
+        redditAccessToken = data?.access_token || '';
+        if (redditAccessToken) {
+          console.log(`[composio] Got Reddit access token from account.data`);
         }
       } catch (err) {
-        console.warn('[composio] Could not verify connected account, proceeding:', err);
+        console.warn('[composio] Could not get connected account:', (err as Error).message);
       }
 
-      // Try REDDIT_GET_ME with the real entity ID (not the pending one)
-      if (!redditUsername && realEntityId) {
+      // ── Step 2: Get Reddit username via direct Reddit API (most reliable) ──
+      if (redditAccessToken) {
+        try {
+          const redditRes = await fetch('https://oauth.reddit.com/api/v1/me', {
+            headers: {
+              Authorization: `Bearer ${redditAccessToken}`,
+              'User-Agent': 'BuildRadar/1.5.1 by BuildRadar',
+            },
+          });
+          if (redditRes.ok) {
+            const meData = await redditRes.json() as Record<string, unknown>;
+            redditUsername = (meData?.name as string) || '';
+            console.log(`[composio] Got Reddit username via /api/v1/me: ${redditUsername}`);
+          } else {
+            console.warn(`[composio] Reddit /api/v1/me returned ${redditRes.status}`);
+          }
+        } catch (err) {
+          console.warn('[composio] Reddit /api/v1/me failed:', (err as Error).message);
+        }
+      }
+
+      // ── Step 3: Try REDDIT_GET_ME via Composio tool execution ──
+      if (!redditUsername && composioEntityId) {
         try {
           const meResult = await composio.tools.execute('REDDIT_GET_ME', {
-            userId: realEntityId,
+            userId: composioEntityId,
             arguments: {},
           });
           const meData = (meResult?.data || meResult) as Record<string, unknown>;
           redditUsername = (meData?.name as string) || (meData?.username as string) || '';
-          console.log(`[composio] Got Reddit username via REDDIT_GET_ME (entity=${realEntityId}): ${redditUsername}`);
+          if (redditUsername) console.log(`[composio] Got Reddit username via REDDIT_GET_ME: ${redditUsername}`);
         } catch (err) {
           console.warn('[composio] REDDIT_GET_ME failed:', (err as Error).message);
         }
       }
 
-      // Last resort fallback
+      // ── Step 4: Fallback username ──
       if (!redditUsername) {
         redditUsername = `reddit_${connectedAccountId.slice(-8)}`;
         console.log(`[composio] Using fallback username: ${redditUsername}`);
@@ -147,12 +157,32 @@ export async function handleDashboardRequest(
 
       const email = `${redditUsername}@reddit.buildradar.xyz`;
 
-      // Find existing user by composio connected account ID, or by email
+      // ── Step 5: Find existing user — try multiple lookups to prevent duplicates ──
       let [existingUser] = await db.select().from(schema.user)
         .where(eq(schema.user.composioConnectedAccountId, connectedAccountId));
 
+      // Check by email (stable across logins for same Reddit user)
       if (!existingUser) {
         [existingUser] = await db.select().from(schema.user).where(eq(schema.user.email, email));
+      }
+
+      // Check by entity ID
+      if (!existingUser && composioEntityId) {
+        [existingUser] = await db.select().from(schema.user)
+          .where(eq(schema.user.composioEntityId, composioEntityId));
+      }
+
+      // If we resolved a real Reddit username, search for any existing user with
+      // a fallback reddit_ name — they're the same person from a previous login
+      if (!existingUser && !redditUsername.startsWith('reddit_')) {
+        const { like } = await import('drizzle-orm');
+        const redditUsers = await db.select().from(schema.user)
+          .where(like(schema.user.email, '%@reddit.buildradar.xyz'));
+        // If there's only one reddit-auth user, it must be this person
+        if (redditUsers.length === 1) {
+          [existingUser] = redditUsers;
+          console.log(`[auth] Found existing reddit user ${existingUser.id} (${existingUser.name}), merging`);
+        }
       }
 
       if (!existingUser) {
@@ -163,22 +193,25 @@ export async function handleDashboardRequest(
           email,
           emailVerified: false,
           tier: 'free',
-          composioEntityId: realEntityId || composioEntityId || null,
+          composioEntityId: composioEntityId || null,
           composioConnectedAccountId: connectedAccountId,
         });
         [existingUser] = await db.select().from(schema.user).where(eq(schema.user.id, userId));
         console.log(`[auth] Created new user for Reddit u/${redditUsername} (${userId})`);
       } else {
-        // Update existing user with latest Composio IDs
+        // Update existing user with latest Composio IDs and real username if resolved
+        const updatedName = !redditUsername.startsWith('reddit_') ? redditUsername : existingUser.name;
+        const updatedEmail = !redditUsername.startsWith('reddit_') ? email : existingUser.email;
         await db.update(schema.user)
           .set({
-            composioEntityId: realEntityId || composioEntityId || existingUser.composioEntityId,
+            composioEntityId: composioEntityId || existingUser.composioEntityId,
             composioConnectedAccountId: connectedAccountId,
-            name: !redditUsername.startsWith('reddit_') ? redditUsername : existingUser.name,
+            name: updatedName,
+            email: updatedEmail,
             updatedAt: new Date(),
           })
           .where(eq(schema.user.id, existingUser.id));
-        console.log(`[auth] Updated existing user ${existingUser.id} with new Composio connection`);
+        console.log(`[auth] Updated existing user ${existingUser.id}: name=${updatedName}, composioEntity=${composioEntityId}`);
       }
 
       // Create session
@@ -592,7 +625,7 @@ export async function handleDashboardRequest(
       try {
         const { getComposio } = await import('../core/composio-auth.js');
         const composio = getComposio();
-        const account = await (composio.connectedAccounts as any).retrieve(connAccountId);
+        const account = await composio.connectedAccounts.get(connAccountId);
         connected = account?.status === 'ACTIVE';
       } catch {
         // If retrieve fails, fall back to checking via entity ID

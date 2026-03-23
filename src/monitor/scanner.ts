@@ -211,7 +211,7 @@ async function scanUserMonitors(
         let connected = false;
         try {
           const composio = getComposio();
-          const account = await (composio.connectedAccounts as any).retrieve(connAccountId);
+          const account = await composio.connectedAccounts.get(connAccountId);
           connected = account?.status === 'ACTIVE';
         } catch {
           // Fallback to entity-based check
@@ -717,7 +717,7 @@ export async function getClientForUser(
       if (connAccountId && entityId) {
         let connected = false;
         try {
-          const account = await (getComposio().connectedAccounts as any).retrieve(connAccountId);
+          const account = await getComposio().connectedAccounts.get(connAccountId);
           connected = account?.status === 'ACTIVE';
         } catch {
           const result = await checkRedditConnection(entityId);
