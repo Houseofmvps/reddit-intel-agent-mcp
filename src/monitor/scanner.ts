@@ -25,6 +25,7 @@ import {
   type PatternCategory,
 } from '../intelligence/index.js';
 import type { RedditPost } from '../types/index.js';
+import { generateDossier } from '../intelligence/dossier.js';
 import { sendAlert, type AlertPayload } from './alerts.js';
 import { ComposioRedditClient } from '../reddit/composio-client.js';
 import { getComposio, checkRedditConnection } from '../core/composio-auth.js';
@@ -61,6 +62,80 @@ function generateSuggestedReply(
   };
 
   return templates[primarySignal] || templates.pain_point;
+}
+
+/**
+ * Generate and store a dossier for a high-scoring scan result.
+ * Returns the dossier data if generated (for use as suggestedReply), or null.
+ */
+async function tryGenerateDossier(
+  r: {
+    title: string;
+    quote?: string;
+    author: string;
+    subreddit: string;
+    redditUrl: string;
+    upvotes: number;
+    comments: number;
+    signals: string[];
+    leadScore: number;
+  },
+  userId: string,
+  monitorName: string,
+  db: ReturnType<typeof getDb>,
+): Promise<{ draftReply: string } | null> {
+  if (r.leadScore < 40) return null;
+
+  try {
+    const dossierData = generateDossier({
+      post: {
+        id: r.redditUrl.split('/').pop() || '',
+        title: r.title,
+        selftext: r.quote || '',
+        author: r.author,
+        subreddit: r.subreddit,
+        subreddit_name_prefixed: `r/${r.subreddit}`,
+        score: r.upvotes,
+        num_comments: r.comments,
+        created_utc: Date.now() / 1000 - 3600, // approximate
+        permalink: r.redditUrl.replace('https://reddit.com', ''),
+        url: r.redditUrl,
+        is_self: true,
+        over_18: false,
+        stickied: false,
+        locked: false,
+        is_video: false,
+        link_flair_text: undefined,
+        author_flair_text: undefined,
+        ups: r.upvotes,
+        downs: 0,
+        upvote_ratio: 0.9,
+      },
+      signals: r.signals,
+      patternWeights: Object.fromEntries(r.signals.map(s => [s, 3])),
+      userHistory: null,
+      productDescription: monitorName,
+    });
+
+    if (dossierData.conversionScore >= 40) {
+      // Strip string-typed date fields that don't match the DB timestamp columns
+      const { repliedAt: _r, convertedAt: _c, ...dossierValues } = dossierData as Record<string, unknown>;
+
+      await db
+        .insert(schema.leadDossier)
+        .values({
+          userId,
+          ...dossierValues,
+        } as typeof schema.leadDossier.$inferInsert)
+        .onConflictDoNothing();
+
+      return { draftReply: dossierData.draftReply };
+    }
+  } catch (err) {
+    console.error(`[scanner] Dossier generation failed for "${r.title}":`, err);
+  }
+
+  return null;
 }
 
 /**
@@ -305,6 +380,10 @@ async function scanMonitor(
   const topResults = results.slice(0, 50);
 
   for (const r of topResults) {
+    // Try to generate a dossier for high-scoring results; use its draft reply if available
+    const dossier = await tryGenerateDossier(r, userId, monitor.name, db);
+    const suggestedReply = dossier?.draftReply ?? generateSuggestedReply(r, monitor.name);
+
     await db.insert(schema.scanResult).values({
       monitorId: monitor.id,
       userId,
@@ -313,7 +392,7 @@ async function scanMonitor(
       subreddit: r.subreddit,
       signals: r.signals,
       quote: r.quote,
-      suggestedReply: generateSuggestedReply(r, monitor.name),
+      suggestedReply,
       redditUrl: r.redditUrl,
       upvotes: r.upvotes,
       comments: r.comments,
@@ -502,6 +581,10 @@ async function scanMonitorComposio(
   const topResults = results.slice(0, 50);
 
   for (const r of topResults) {
+    // Try to generate a dossier for high-scoring results; use its draft reply if available
+    const dossier = await tryGenerateDossier(r, userId, monitor.name, db);
+    const suggestedReply = dossier?.draftReply ?? generateSuggestedReply(r, monitor.name);
+
     await db.insert(schema.scanResult).values({
       monitorId: monitor.id,
       userId,
@@ -510,7 +593,7 @@ async function scanMonitorComposio(
       subreddit: r.subreddit,
       signals: r.signals,
       quote: r.quote,
-      suggestedReply: generateSuggestedReply(r, monitor.name),
+      suggestedReply,
       redditUrl: r.redditUrl,
       upvotes: r.upvotes,
       comments: r.comments,
