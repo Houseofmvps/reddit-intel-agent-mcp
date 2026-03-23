@@ -47,8 +47,8 @@ export async function getRedditConnectLink(
   );
 
   return {
-    redirectUrl: connectionRequest.redirectUrl,
-    connectionId: connectionRequest.id,
+    redirectUrl: connectionRequest.redirectUrl ?? '',
+    connectionId: connectionRequest.id ?? '',
   };
 }
 
@@ -66,7 +66,8 @@ export async function checkRedditConnection(
     toolkitSlugs: ['reddit'],
   });
 
-  const active = accounts.find(
+  const items = 'items' in accounts ? (accounts as any).items : accounts;
+  const active = (Array.isArray(items) ? items : []).find(
     (acc: { status: string; id: string }) => acc.status === 'ACTIVE',
   );
 
