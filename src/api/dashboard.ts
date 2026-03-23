@@ -39,6 +39,14 @@ export async function handleDashboardRequest(
     return true;
   }
 
+  // Composio callback — before auth check (redirect from Composio, no cookies)
+  if (url.startsWith('/dashboard/composio/callback')) {
+    const frontendOrigin = process.env.FRONTEND_URL || 'https://buildradar.xyz';
+    res.writeHead(302, { Location: `${frontendOrigin}/app/settings?reddit=connected` });
+    res.end();
+    return true;
+  }
+
   // Auth check
   const session = await getSessionFromRequest(req);
   if (!session) {
@@ -381,6 +389,23 @@ export async function handleDashboardRequest(
   if (url === '/dashboard/reddit/disconnect' && req.method === 'DELETE') {
     await db.delete(schema.redditOAuthConnection).where(eq(schema.redditOAuthConnection.userId, userId));
     json(res, 200, { disconnected: true });
+    return true;
+  }
+
+  // ── GET /dashboard/composio/connect — Get Composio Connect Link ──
+  if (url === '/dashboard/composio/connect' && req.method === 'GET') {
+    const { getRedditConnectLink } = await import('../core/composio-auth.js');
+    const redirectUrl = `${process.env.BETTER_AUTH_URL || 'https://api.buildradar.xyz'}/dashboard/composio/callback`;
+    const result = await getRedditConnectLink(userId, redirectUrl);
+    json(res, 200, { url: result.redirectUrl });
+    return true;
+  }
+
+  // ── GET /dashboard/composio/status — Check Composio Reddit connection ──
+  if (url === '/dashboard/composio/status' && req.method === 'GET') {
+    const { checkRedditConnection } = await import('../core/composio-auth.js');
+    const status = await checkRedditConnection(userId);
+    json(res, 200, status);
     return true;
   }
 

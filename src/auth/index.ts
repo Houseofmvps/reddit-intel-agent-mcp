@@ -68,7 +68,7 @@ function createAuth() {
         verification: schema.verification,
       },
     }),
-    emailAndPassword: { enabled: false },
+    emailAndPassword: { enabled: true },
     plugins,
     databaseHooks: {
       account: {
