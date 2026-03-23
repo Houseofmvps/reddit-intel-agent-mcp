@@ -9,7 +9,7 @@ import type { IncomingMessage, ServerResponse } from 'http';
 import { getSessionFromRequest } from '../auth/session.js';
 import { getDb, schema } from '../db/index.js';
 import { encrypt, decrypt } from '../db/crypto.js';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, desc } from 'drizzle-orm';
 import { buildAuthorizationUrl, exchangeCodeForTokens, getRedditUsername, isRedditOAuthConfigured } from './reddit-oauth.js';
 import { randomBytes } from 'crypto';
 import { runSingleMonitorScan } from '../monitor/scanner.js';
@@ -493,6 +493,79 @@ export async function handleDashboardRequest(
   if (url === '/dashboard/export-check' && req.method === 'GET') {
     const [u] = await db.select().from(schema.user).where(eq(schema.user.id, userId));
     json(res, 200, { canExport: u?.tier === 'pro', tier: u?.tier || 'free' });
+    return true;
+  }
+
+  // ── GET /dashboard/dossiers ──
+  if (url === '/dashboard/dossiers' && req.method === 'GET') {
+    const dossiers = await db.select().from(schema.leadDossier)
+      .where(eq(schema.leadDossier.userId, userId))
+      .orderBy(desc(schema.leadDossier.conversionScore))
+      .limit(50);
+    json(res, 200, { dossiers });
+    return true;
+  }
+
+  // ── PUT /dashboard/dossiers/:id/status ──
+  if (url.match(/^\/dashboard\/dossiers\/[^/]+\/status$/) && req.method === 'PUT') {
+    const dossierId = url.split('/')[3]; // extract ID from URL
+    const body = await readBody(req) as { status?: string; notes?: string } | null;
+    if (!body?.status) { json(res, 400, { error: 'status is required' }); return true; }
+
+    const [dossier] = await db.select().from(schema.leadDossier)
+      .where(and(eq(schema.leadDossier.id, dossierId), eq(schema.leadDossier.userId, userId)));
+    if (!dossier) { json(res, 404, { error: 'Not found' }); return true; }
+
+    const updateData: Record<string, any> = { status: body.status, updatedAt: new Date() };
+    if (body.status === 'replied') updateData.repliedAt = new Date();
+    if (body.status === 'converted') updateData.convertedAt = new Date();
+
+    await db.update(schema.leadDossier).set(updateData)
+      .where(eq(schema.leadDossier.id, dossierId));
+
+    // Log conversion event
+    await db.insert(schema.conversionEvent).values({
+      dossierId: dossier.id,
+      userId,
+      fromStatus: dossier.status,
+      toStatus: body.status,
+      notes: body.notes,
+    });
+
+    json(res, 200, { success: true });
+    return true;
+  }
+
+  // ── GET /dashboard/conversion-stats ──
+  if (url === '/dashboard/conversion-stats' && req.method === 'GET') {
+    const { sql } = await import('drizzle-orm');
+    const result = await db.execute(sql`
+      SELECT
+        COUNT(*)::int AS total,
+        COUNT(*) FILTER (WHERE status = 'pending')::int AS pending,
+        COUNT(*) FILTER (WHERE status = 'replied')::int AS replied,
+        COUNT(*) FILTER (WHERE status = 'converted')::int AS converted,
+        COUNT(*) FILTER (WHERE status = 'passed')::int AS passed,
+        COALESCE(ROUND(AVG(conversion_score))::int, 0) AS avg_score,
+        COUNT(*) FILTER (WHERE conversion_label = 'hot' AND status = 'pending')::int AS hot_leads
+      FROM lead_dossier
+      WHERE user_id = ${userId}
+    `);
+
+    const row = (result as any)?.[0] ?? {};
+    const total = row.total ?? 0;
+    const converted = row.converted ?? 0;
+
+    json(res, 200, {
+      total,
+      pending: row.pending ?? 0,
+      replied: row.replied ?? 0,
+      converted,
+      passed: row.passed ?? 0,
+      conversionRate: total > 0 ? Math.round((converted / total) * 100) : 0,
+      avgScore: row.avg_score ?? 0,
+      hotLeads: row.hot_leads ?? 0,
+    });
     return true;
   }
 
