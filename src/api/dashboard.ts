@@ -394,18 +394,28 @@ export async function handleDashboardRequest(
 
   // ── GET /dashboard/composio/connect — Get Composio Connect Link ──
   if (url === '/dashboard/composio/connect' && req.method === 'GET') {
-    const { getRedditConnectLink } = await import('../core/composio-auth.js');
-    const redirectUrl = `${process.env.BETTER_AUTH_URL || 'https://api.buildradar.xyz'}/dashboard/composio/callback`;
-    const result = await getRedditConnectLink(userId, redirectUrl);
-    json(res, 200, { url: result.redirectUrl });
+    try {
+      const { getRedditConnectLink } = await import('../core/composio-auth.js');
+      const redirectUrl = `${process.env.BETTER_AUTH_URL || 'https://api.buildradar.xyz'}/dashboard/composio/callback`;
+      const result = await getRedditConnectLink(userId, redirectUrl);
+      json(res, 200, { url: result.redirectUrl });
+    } catch (err) {
+      console.error('[composio] connect error:', err);
+      json(res, 503, { error: 'Reddit connection service unavailable' });
+    }
     return true;
   }
 
   // ── GET /dashboard/composio/status — Check Composio Reddit connection ──
   if (url === '/dashboard/composio/status' && req.method === 'GET') {
-    const { checkRedditConnection } = await import('../core/composio-auth.js');
-    const status = await checkRedditConnection(userId);
-    json(res, 200, status);
+    try {
+      const { checkRedditConnection } = await import('../core/composio-auth.js');
+      const status = await checkRedditConnection(userId);
+      json(res, 200, status);
+    } catch (err) {
+      console.error('[composio] status check error:', err);
+      json(res, 200, { connected: false, connectionId: null });
+    }
     return true;
   }
 

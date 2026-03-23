@@ -79,6 +79,7 @@ async function tryGenerateDossier(
     comments: number;
     signals: string[];
     leadScore: number;
+    createdUtc?: number;
   },
   userId: string,
   monitorName: string,
@@ -97,7 +98,7 @@ async function tryGenerateDossier(
         subreddit_name_prefixed: `r/${r.subreddit}`,
         score: r.upvotes,
         num_comments: r.comments,
-        created_utc: Date.now() / 1000 - 3600, // approximate
+        created_utc: r.createdUtc ?? Date.now() / 1000 - 3600,
         permalink: r.redditUrl.replace('https://reddit.com', ''),
         url: r.redditUrl,
         is_self: true,
@@ -331,6 +332,7 @@ async function scanMonitor(
     comments: number;
     author: string;
     leadScore: number;
+    createdUtc: number;
   }> = [];
 
   for (const post of posts) {
@@ -370,6 +372,7 @@ async function scanMonitor(
       comments: post.num_comments,
       author: post.author,
       leadScore: leadScore.total,
+      createdUtc: post.created_utc,
     });
   }
 
@@ -499,7 +502,8 @@ async function scanMonitorComposio(
     try {
       if (keywords.length > 0) {
         for (const kw of keywords) {
-          const posts = await composio.search(kw, {
+          // Scope search to this subreddit using Reddit's search syntax
+          const posts = await composio.search(`subreddit:${sub} ${kw}`, {
             sort: 'new',
             time: 'day',
             limit: 25,
@@ -535,6 +539,7 @@ async function scanMonitorComposio(
     comments: number;
     author: string;
     leadScore: number;
+    createdUtc: number;
   }> = [];
 
   for (const post of posts) {
@@ -571,6 +576,7 @@ async function scanMonitorComposio(
       comments: post.num_comments,
       author: post.author,
       leadScore: leadScore.total,
+      createdUtc: post.created_utc,
     });
   }
 
