@@ -202,18 +202,24 @@ async function scanUserMonitors(
   // Try Composio first (preferred — no Reddit app approval needed)
   if (process.env.COMPOSIO_API_KEY) {
     try {
-      const { connected } = await checkRedditConnection(userId);
-      if (connected) {
-        const composioClient = new ComposioRedditClient(getComposio(), userId);
-        for (const monitor of monitors) {
-          try {
-            await scanMonitorComposio(userId, monitor, composioClient, stats);
-          } catch (err) {
-            console.error(`[scanner] Error scanning monitor ${monitor.id} via Composio:`, err);
-            stats.errors++;
+      // Look up user's composioEntityId
+      const [usr] = await db.select().from(schema.user).where(eq(schema.user.id, userId));
+      const composioId = usr?.composioEntityId;
+
+      if (composioId) {
+        const { connected } = await checkRedditConnection(composioId);
+        if (connected) {
+          const composioClient = new ComposioRedditClient(getComposio(), composioId);
+          for (const monitor of monitors) {
+            try {
+              await scanMonitorComposio(userId, monitor, composioClient, stats);
+            } catch (err) {
+              console.error(`[scanner] Error scanning monitor ${monitor.id} via Composio:`, err);
+              stats.errors++;
+            }
           }
+          return; // Done — used Composio, don't fall through to legacy
         }
-        return; // Done — used Composio, don't fall through to legacy
       }
     } catch (err) {
       console.error(`[scanner] Composio check failed for user ${userId}, falling back to direct:`, err);
