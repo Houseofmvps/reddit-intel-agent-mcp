@@ -17,6 +17,8 @@ export const user = pgTable('user', {
   polarCustomerId: text('polar_customer_id'),
   composioEntityId: text('composio_entity_id'), // Composio user/entity ID for tool execution
   composioConnectedAccountId: text('composio_connected_account_id'), // Composio connected account ID for status checks
+  emailAlertsEnabled: boolean('email_alerts_enabled').notNull().default(true),
+  dailyDigestEnabled: boolean('daily_digest_enabled').notNull().default(true),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });

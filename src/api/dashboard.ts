@@ -246,8 +246,64 @@ export async function handleDashboardRequest(
       email: u.email,
       image: u.image,
       tier: u.tier,
+      emailAlertsEnabled: u.emailAlertsEnabled,
+      dailyDigestEnabled: u.dailyDigestEnabled,
       createdAt: u.createdAt,
     });
+    return true;
+  }
+
+  // ── PUT /dashboard/me ──
+  if (url === '/dashboard/me' && req.method === 'PUT') {
+    const body = await readBody(req) as { name?: string; emailAlertsEnabled?: boolean; dailyDigestEnabled?: boolean } | null;
+    if (!body) { json(res, 400, { error: 'Request body required' }); return true; }
+
+    const updates: Record<string, unknown> = {};
+    if ('name' in body) updates.name = body.name;
+    if ('emailAlertsEnabled' in body) updates.emailAlertsEnabled = body.emailAlertsEnabled;
+    if ('dailyDigestEnabled' in body) updates.dailyDigestEnabled = body.dailyDigestEnabled;
+
+    if (Object.keys(updates).length === 0) {
+      json(res, 400, { error: 'At least one field required (name, emailAlertsEnabled, dailyDigestEnabled)' });
+      return true;
+    }
+
+    updates.updatedAt = new Date();
+    await db.update(schema.user).set(updates).where(eq(schema.user.id, userId));
+
+    const [updated] = await db.select().from(schema.user).where(eq(schema.user.id, userId));
+    json(res, 200, {
+      id: updated.id,
+      name: updated.name,
+      email: updated.email,
+      tier: updated.tier,
+      emailAlertsEnabled: updated.emailAlertsEnabled,
+      dailyDigestEnabled: updated.dailyDigestEnabled,
+    });
+    return true;
+  }
+
+  // ── DELETE /dashboard/me ──
+  if (url === '/dashboard/me' && req.method === 'DELETE') {
+    // Try to revoke Composio connection
+    const [usr] = await db.select().from(schema.user).where(eq(schema.user.id, userId));
+    if (usr?.composioConnectedAccountId) {
+      try {
+        const { Composio } = await import('@composio/core');
+        const composio = new Composio();
+        await composio.connectedAccounts.delete(usr.composioConnectedAccountId);
+      } catch (err) {
+        console.warn('[settings] Could not revoke Composio connection:', (err as Error).message);
+      }
+    }
+
+    // Delete sessions and user (FK cascades handle related data)
+    await db.delete(schema.session).where(eq(schema.session.userId, userId));
+    await db.delete(schema.user).where(eq(schema.user.id, userId));
+
+    // Clear session cookie
+    res.setHeader('Set-Cookie', 'buildradar.session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0');
+    json(res, 200, { deleted: true });
     return true;
   }
 
