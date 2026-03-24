@@ -30,6 +30,15 @@ import { sendAlert, type AlertPayload } from './alerts.js';
 import { ComposioRedditClient } from '../reddit/composio-client.js';
 import { getComposio, checkRedditConnection } from '../core/composio-auth.js';
 
+/**
+ * Word-boundary keyword matching — replaces naive .includes() substring check.
+ */
+function matchesKeyword(text: string, keyword: string): boolean {
+  const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const regex = new RegExp(`\\b${escaped}\\b`, 'i');
+  return regex.test(text);
+}
+
 const PRO_SCAN_INTERVAL_MS = 1 * 60 * 60 * 1000; // 1 hour for pro users
 const FREE_SCAN_INTERVAL_MS = 3 * 60 * 60 * 1000; // 3 hours for free users
 
@@ -501,9 +510,12 @@ async function scanMonitorComposio(
 
   for (const sub of subreddits) {
     try {
-      // Always browse new posts for signal detection
-      const posts = await composio.browseSubreddit(sub, 'new', { limit: 50 });
-      allPosts.push(...posts);
+      // Fetch both new and top posts in parallel for broader coverage
+      const [newPosts, topPosts] = await Promise.all([
+        composio.browseSubreddit(sub, 'new', { limit: 50 }),
+        composio.browseSubreddit(sub, 'top', { limit: 50 }),
+      ]);
+      allPosts.push(...newPosts, ...topPosts);
 
       // Also do keyword-filtered search for additional coverage
       if (keywords.length > 0) {
@@ -546,6 +558,7 @@ async function scanMonitorComposio(
     author: string;
     leadScore: number;
     createdUtc: number;
+    keywordMatch: boolean;
   }> = [];
 
   for (const post of posts) {
@@ -569,7 +582,13 @@ async function scanMonitorComposio(
 
     const leadScore = scoreLeadPost(post);
     const signals = signalSummary(matches);
-    const totalScore = Math.max(leadScore.total, matches.reduce((sum, m) => sum + m.weight, 0) * 10);
+    const baseScore = Math.max(leadScore.total, matches.reduce((sum, m) => sum + m.weight, 0) * 10);
+    // Engagement-weighted boost: high upvotes + comments increase score
+    const engagementBoost = Math.min(10, Math.floor(((post.ups || 0) + (post.num_comments || 0) * 2) / 10));
+    const totalScore = baseScore + engagementBoost;
+
+    // Word-boundary keyword matching for additional relevance filtering
+    const keywordMatch = keywords.length === 0 || keywords.some(kw => matchesKeyword(text, kw));
 
     results.push({
       title: post.title,
@@ -581,13 +600,17 @@ async function scanMonitorComposio(
       upvotes: post.score,
       comments: post.num_comments,
       author: post.author,
-      leadScore: leadScore.total,
+      leadScore: leadScore.total + engagementBoost,
       createdUtc: post.created_utc,
+      keywordMatch,
     });
   }
 
-  // Sort by score descending
-  results.sort((a, b) => b.score - a.score);
+  // Sort by score descending, prioritize keyword matches
+  results.sort((a, b) => {
+    if (a.keywordMatch !== b.keywordMatch) return a.keywordMatch ? -1 : 1;
+    return b.score - a.score;
+  });
 
   // Store top results
   const topResults = results.slice(0, 50);

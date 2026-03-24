@@ -72,8 +72,11 @@ export class ComposioRedditClient {
     const words = keywordPhrase.split(/\s+/).filter(w => w.length >= 3 && !stopWords.has(w));
     const filtered = words.length > 0
       ? allPosts.filter(p => {
-          const text = `${p.title} ${p.selftext ?? ''}`.toLowerCase();
-          return words.some(w => text.includes(w));
+          const text = `${p.title} ${p.selftext ?? ''}`;
+          return words.some(w => {
+            const escaped = w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            return new RegExp(`\\b${escaped}\\b`, 'i').test(text);
+          });
         })
       : allPosts;
 
@@ -93,7 +96,7 @@ export class ComposioRedditClient {
     subreddit = subreddit.replace(/^r\//, '').trim();
     if (!subreddit) throw new Error('Subreddit name is required');
 
-    const { limit = 25, after } = opts;
+    const { limit = 50, after } = opts;
 
     const cacheKey = `composio:browse:${subreddit}:${sort}`;
     const cached = this.cache.get<RedditPost[]>(cacheKey);
