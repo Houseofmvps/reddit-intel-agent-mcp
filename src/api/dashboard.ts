@@ -9,7 +9,7 @@ import type { IncomingMessage, ServerResponse } from 'http';
 import { getSessionFromRequest } from '../auth/session.js';
 import { getDb, schema } from '../db/index.js';
 import { encrypt, decrypt } from '../db/crypto.js';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc, sql, gte } from 'drizzle-orm';
 import { buildAuthorizationUrl, exchangeCodeForTokens, getRedditUsername, isRedditOAuthConfigured } from './reddit-oauth.js';
 import { randomBytes } from 'crypto';
 import { runSingleMonitorScan } from '../monitor/scanner.js';
@@ -838,6 +838,94 @@ export async function handleDashboardRequest(
       avgScore: row.avg_score ?? 0,
       hotLeads: row.hot_leads ?? 0,
     });
+    return true;
+  }
+
+  // ── POST /dashboard/generate-reply ──
+  if (url === '/dashboard/generate-reply' && req.method === 'POST') {
+    const body = await readBody(req) as { resultId?: string; productContext?: string } | null;
+    if (!body?.resultId) {
+      json(res, 400, { error: 'resultId is required' });
+      return true;
+    }
+
+    // Rate limit: count today's generations
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const [countRow] = await db.select({ count: sql<number>`count(*)` })
+      .from(schema.generatedReply)
+      .where(and(
+        eq(schema.generatedReply.userId, userId),
+        gte(schema.generatedReply.createdAt, today)
+      ));
+    const dailyCount = Number(countRow?.count || 0);
+
+    // Check user tier
+    const [me] = await db.select().from(schema.user).where(eq(schema.user.id, userId));
+    const limit = me?.tier === 'pro' ? 50 : 3;
+    if (dailyCount >= limit) {
+      json(res, 429, {
+        error: me?.tier === 'pro'
+          ? 'Daily reply limit reached (50/day)'
+          : 'Free tier limit reached (3/day). Upgrade to Pro for 50 replies/day.',
+        tier: me?.tier,
+        limit,
+        used: dailyCount,
+      });
+      return true;
+    }
+
+    // Check cache first
+    const existing = await db.select().from(schema.generatedReply)
+      .where(and(
+        eq(schema.generatedReply.userId, userId),
+        eq(schema.generatedReply.resultId, body.resultId),
+      ));
+    if (existing.length > 0) {
+      json(res, 200, { replies: existing.map(r => ({ tone: r.tone, text: r.replyText })), cached: true });
+      return true;
+    }
+
+    // Load result + monitor context
+    const [result] = await db.select().from(schema.scanResult)
+      .where(eq(schema.scanResult.id, body.resultId));
+    if (!result) {
+      json(res, 404, { error: 'Result not found' });
+      return true;
+    }
+
+    const [monitorRow] = result.monitorId
+      ? await db.select().from(schema.monitor).where(eq(schema.monitor.id, result.monitorId))
+      : [null];
+
+    try {
+      const { generateReplies } = await import('./reply-engine.js');
+      const replies = await generateReplies({
+        postTitle: result.title,
+        postQuote: result.quote || '',
+        subreddit: result.subreddit,
+        signals: (result.signals as string[]) || [],
+        score: result.score,
+        productDescription: body.productContext || monitorRow?.name || 'my SaaS product',
+        keywords: (monitorRow?.keywords as string[]) || [],
+      });
+
+      // Cache the replies
+      for (const reply of replies) {
+        await db.insert(schema.generatedReply).values({
+          userId,
+          resultId: body.resultId,
+          tone: reply.tone,
+          replyText: reply.text,
+          model: 'claude-haiku-4-5-20251001',
+        });
+      }
+
+      json(res, 200, { replies, cached: false, remaining: limit - dailyCount - 1 });
+    } catch (err) {
+      console.error('[reply-engine] generation error:', err);
+      json(res, 500, { error: 'Failed to generate replies' });
+    }
     return true;
   }
 

@@ -156,6 +156,16 @@ export const conversionEvent = pgTable('conversion_event', {
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });
 
+export const generatedReply = pgTable('generated_reply', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  resultId: text('result_id').notNull().references(() => scanResult.id, { onDelete: 'cascade' }),
+  tone: text('tone').notNull(),
+  replyText: text('reply_text').notNull(),
+  model: text('model').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
 export const marketSnapshot = pgTable('market_snapshot', {
   id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
   userId: text('user_id').notNull().references(() => user.id),
