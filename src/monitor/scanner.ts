@@ -252,42 +252,25 @@ async function scanUserMonitors(
 
   const cred = creds[0];
 
-  // Create a RedditAuth with decrypted credentials
+  // Create a RedditAuth with decrypted credentials (no process.env mutation)
   const auth = new RedditAuth();
-  // Set credentials via env-like injection for this scan
-  const origEnv = {
-    REDDIT_INTEL_CLIENT_ID: process.env.REDDIT_INTEL_CLIENT_ID,
-    REDDIT_INTEL_CLIENT_SECRET: process.env.REDDIT_INTEL_CLIENT_SECRET,
-    REDDIT_INTEL_USERNAME: process.env.REDDIT_INTEL_USERNAME,
-    REDDIT_INTEL_PASSWORD: process.env.REDDIT_INTEL_PASSWORD,
-  };
+  auth.initializeWithConfig({
+    clientId: decrypt(cred.clientId),
+    clientSecret: decrypt(cred.clientSecret),
+    username: cred.username ? decrypt(cred.username) : undefined,
+    password: cred.password ? decrypt(cred.password) : undefined,
+  });
 
-  try {
-    // Temporarily set user's credentials
-    process.env.REDDIT_INTEL_CLIENT_ID = decrypt(cred.clientId);
-    process.env.REDDIT_INTEL_CLIENT_SECRET = decrypt(cred.clientSecret);
-    if (cred.username) process.env.REDDIT_INTEL_USERNAME = decrypt(cred.username);
-    if (cred.password) process.env.REDDIT_INTEL_PASSWORD = decrypt(cred.password);
+  const cache = new IntelCache({ defaultTTL: 5 * 60_000, maxSizeBytes: 10 * 1024 * 1024 });
+  const limiter = new RateLimiter({ limit: auth.getRateLimit(), windowMs: 60_000, label: `User ${userId}` });
+  const reddit = new RedditClient({ auth, rateLimiter: limiter, cache });
 
-    await auth.initialize();
-
-    const cache = new IntelCache({ defaultTTL: 5 * 60_000, maxSizeBytes: 10 * 1024 * 1024 });
-    const limiter = new RateLimiter({ limit: auth.getRateLimit(), windowMs: 60_000, label: `User ${userId}` });
-    const reddit = new RedditClient({ auth, rateLimiter: limiter, cache });
-
-    for (const monitor of monitors) {
-      try {
-        await scanMonitor(userId, monitor, reddit, stats);
-      } catch (err) {
-        console.error(`[scanner] Error scanning monitor ${monitor.id}:`, err);
-        stats.errors++;
-      }
-    }
-  } finally {
-    // Restore original env
-    for (const [key, val] of Object.entries(origEnv)) {
-      if (val === undefined) delete process.env[key];
-      else process.env[key] = val;
+  for (const monitor of monitors) {
+    try {
+      await scanMonitor(userId, monitor, reddit, stats);
+    } catch (err) {
+      console.error(`[scanner] Error scanning monitor ${monitor.id}:`, err);
+      stats.errors++;
     }
   }
 }
@@ -749,29 +732,16 @@ export async function getClientForUser(
 
   const cred = creds[0];
   const auth = new RedditAuth();
-  const origEnv = {
-    REDDIT_INTEL_CLIENT_ID: process.env.REDDIT_INTEL_CLIENT_ID,
-    REDDIT_INTEL_CLIENT_SECRET: process.env.REDDIT_INTEL_CLIENT_SECRET,
-    REDDIT_INTEL_USERNAME: process.env.REDDIT_INTEL_USERNAME,
-    REDDIT_INTEL_PASSWORD: process.env.REDDIT_INTEL_PASSWORD,
-  };
+  auth.initializeWithConfig({
+    clientId: decrypt(cred.clientId),
+    clientSecret: decrypt(cred.clientSecret),
+    username: cred.username ? decrypt(cred.username) : undefined,
+    password: cred.password ? decrypt(cred.password) : undefined,
+  });
 
-  try {
-    process.env.REDDIT_INTEL_CLIENT_ID = decrypt(cred.clientId);
-    process.env.REDDIT_INTEL_CLIENT_SECRET = decrypt(cred.clientSecret);
-    if (cred.username) process.env.REDDIT_INTEL_USERNAME = decrypt(cred.username);
-    if (cred.password) process.env.REDDIT_INTEL_PASSWORD = decrypt(cred.password);
-
-    await auth.initialize();
-    const cache = new IntelCache({ defaultTTL: 5 * 60_000, maxSizeBytes: 10 * 1024 * 1024 });
-    const limiter = new RateLimiter({ limit: auth.getRateLimit(), windowMs: 60_000, label: `User ${userId}` });
-    return { type: 'direct', client: new RedditClient({ auth, rateLimiter: limiter, cache }) };
-  } finally {
-    for (const [key, val] of Object.entries(origEnv)) {
-      if (val === undefined) delete process.env[key];
-      else process.env[key] = val;
-    }
-  }
+  const cache = new IntelCache({ defaultTTL: 5 * 60_000, maxSizeBytes: 10 * 1024 * 1024 });
+  const limiter = new RateLimiter({ limit: auth.getRateLimit(), windowMs: 60_000, label: `User ${userId}` });
+  return { type: 'direct', client: new RedditClient({ auth, rateLimiter: limiter, cache }) };
 }
 
 /**

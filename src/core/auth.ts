@@ -53,6 +53,14 @@ export class RedditAuth {
     }
   }
 
+  /**
+   * Initialize with explicit credentials instead of reading from env/file.
+   * Used by the scanner to avoid mutating process.env.
+   */
+  initializeWithConfig(config: AuthConfig): void {
+    this.config = { ...config };
+  }
+
   private loadFromEnv(): AuthConfig | null {
     const clientId = this.cleanEnv(process.env.REDDIT_INTEL_CLIENT_ID);
     const clientSecret = this.cleanEnv(process.env.REDDIT_INTEL_CLIENT_SECRET);
