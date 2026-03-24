@@ -518,19 +518,24 @@ async function scanMonitorComposio(
 
   for (const sub of subreddits) {
     try {
+      // Always browse new posts for signal detection
+      const posts = await composio.browseSubreddit(sub, 'new', { limit: 50 });
+      allPosts.push(...posts);
+
+      // Also do keyword-filtered search for additional coverage
       if (keywords.length > 0) {
         for (const kw of keywords) {
-          // Scope search to this subreddit using Reddit's search syntax
-          const posts = await composio.search(`subreddit:${sub} ${kw}`, {
-            sort: 'new',
-            time: 'day',
-            limit: 25,
-          });
-          allPosts.push(...posts);
+          try {
+            const kwPosts = await composio.search(`subreddit:${sub} ${kw}`, {
+              sort: 'new',
+              time: 'day',
+              limit: 25,
+            });
+            allPosts.push(...kwPosts);
+          } catch (kwErr) {
+            console.error(`[scanner] Keyword search failed for "${kw}" in r/${sub}:`, kwErr);
+          }
         }
-      } else {
-        const posts = await composio.browseSubreddit(sub, 'new', { limit: 50 });
-        allPosts.push(...posts);
       }
     } catch (err) {
       console.error(`[scanner] Error fetching r/${sub} via Composio:`, err);

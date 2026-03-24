@@ -59,19 +59,22 @@ export class ComposioRedditClient {
     // Parse "subreddit:X keyword" format
     const subMatch = query.match(/subreddit:(\S+)/);
     const subreddit = subMatch ? subMatch[1] : '';
-    const keyword = query.replace(/subreddit:\S+\s*/, '').trim().toLowerCase();
+    const keywordPhrase = query.replace(/subreddit:\S+\s*/, '').trim().toLowerCase();
 
     if (!subreddit) return [];
 
     // Fetch new posts from the subreddit
     const allPosts = await this.browseSubreddit(subreddit, 'new', { limit: Math.min(limit * 2, 100) });
 
-    // Filter by keyword in title or selftext
-    const filtered = keyword
-      ? allPosts.filter(p =>
-          p.title.toLowerCase().includes(keyword) ||
-          (p.selftext?.toLowerCase().includes(keyword) ?? false)
-        )
+    // Filter by ANY keyword word (not exact phrase) in title or selftext
+    // Split phrase into meaningful words (3+ chars, skip stop words)
+    const stopWords = new Set(['the', 'for', 'and', 'but', 'not', 'are', 'was', 'has', 'how', 'can', 'get']);
+    const words = keywordPhrase.split(/\s+/).filter(w => w.length >= 3 && !stopWords.has(w));
+    const filtered = words.length > 0
+      ? allPosts.filter(p => {
+          const text = `${p.title} ${p.selftext ?? ''}`.toLowerCase();
+          return words.some(w => text.includes(w));
+        })
       : allPosts;
 
     const results = filtered.slice(0, limit);
