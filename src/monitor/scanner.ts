@@ -28,6 +28,7 @@ import type { RedditPost } from '../types/index.js';
 import { generateDossier } from '../intelligence/dossier.js';
 import { sendAlert, type AlertPayload } from './alerts.js';
 import { ComposioRedditClient } from '../reddit/composio-client.js';
+import { DirectRedditClient, ComposioTokenProvider } from '../reddit/direct-reddit-client.js';
 import { getComposio, checkRedditConnection } from '../core/composio-auth.js';
 
 /**
@@ -208,7 +209,7 @@ async function scanUserMonitors(
 ): Promise<void> {
   const db = getDb();
 
-  // Try Composio first (preferred — no Reddit app approval needed)
+  // Try Direct Reddit API via Composio OAuth token (preferred — real search)
   if (process.env.COMPOSIO_API_KEY) {
     try {
       const [usr] = await db.select().from(schema.user).where(eq(schema.user.id, userId));
@@ -216,34 +217,34 @@ async function scanUserMonitors(
       const entityId = usr?.composioEntityId;
 
       if (connAccountId && entityId) {
-        // Check connection status via connected account ID
+        // Check connection status
         let connected = false;
         try {
           const composio = getComposio();
           const account = await composio.connectedAccounts.get(connAccountId);
           connected = account?.status === 'ACTIVE';
         } catch {
-          // Fallback to entity-based check
           const result = await checkRedditConnection(entityId);
           connected = result.connected;
         }
 
         if (connected) {
-          // Use entity ID for tool execution (Composio maps tools via entity ID)
-          const composioClient = new ComposioRedditClient(getComposio(), entityId);
+          // Use DirectRedditClient with the OAuth token from Composio
+          const tokenProvider = new ComposioTokenProvider(getComposio(), connAccountId);
+          const directClient = new DirectRedditClient(tokenProvider);
           for (const monitor of monitors) {
             try {
-              await scanMonitorComposio(userId, monitor, composioClient, stats);
+              await scanMonitorDirect(userId, monitor, directClient, stats);
             } catch (err) {
-              console.error(`[scanner] Error scanning monitor ${monitor.id} via Composio:`, err);
+              console.error(`[scanner] Error scanning monitor ${monitor.id} via Direct API:`, err);
               stats.errors++;
             }
           }
-          return; // Done — used Composio, don't fall through to legacy
+          return;
         }
       }
     } catch (err) {
-      console.error(`[scanner] Composio check failed for user ${userId}, falling back to direct:`, err);
+      console.error(`[scanner] Direct API check failed for user ${userId}, falling back to legacy:`, err);
     }
   }
 
@@ -488,14 +489,13 @@ async function scanMonitor(
 }
 
 /**
- * Scan a single monitor using ComposioRedditClient.
- * Same logic as scanMonitor() but works with ComposioRedditClient
- * which returns RedditPost[] directly (no Listing wrapper).
+ * Scan a single monitor using DirectRedditClient (real Reddit search API).
+ * This is the primary scanning path — uses actual keyword search across subreddits.
  */
-async function scanMonitorComposio(
+async function scanMonitorDirect(
   userId: string,
   monitor: typeof schema.monitor.$inferSelect,
-  composio: ComposioRedditClient,
+  reddit: DirectRedditClient,
   stats: ScanStats,
 ): Promise<void> {
   const db = getDb();
@@ -503,49 +503,83 @@ async function scanMonitorComposio(
   const keywords = monitor.keywords as string[];
   const signalTypes = monitor.signalTypes as string[];
 
-  console.error(`[scanner] Scanning monitor "${monitor.name}" via Composio (${subreddits.length} subs, ${keywords.length} keywords)`);
+  console.error(`[scanner] Scanning monitor "${monitor.name}" via Direct Reddit API (${subreddits.length} subs, ${keywords.length} keywords)`);
 
-  // Gather posts from configured subreddits
   const allPosts: RedditPost[] = [];
 
   for (const sub of subreddits) {
     try {
-      // Fetch both new and top posts in parallel for broader coverage
-      const [newPosts, topPosts] = await Promise.all([
-        composio.browseSubreddit(sub, 'new', { limit: 50 }),
-        composio.browseSubreddit(sub, 'top', { limit: 50 }),
-      ]);
-      allPosts.push(...newPosts, ...topPosts);
-
-      // Also do keyword-filtered search for additional coverage
       if (keywords.length > 0) {
+        // REAL SEARCH — this is the game changer.
+        // Search each keyword within the subreddit using Reddit's search API.
         for (const kw of keywords) {
           try {
-            const kwPosts = await composio.search(`subreddit:${sub} ${kw}`, {
+            const posts = await reddit.search(kw, {
+              subreddit: sub,
               sort: 'new',
-              time: 'day',
-              limit: 25,
+              time: 'week',
+              limit: 100,
             });
-            allPosts.push(...kwPosts);
+            allPosts.push(...posts);
           } catch (kwErr) {
-            console.error(`[scanner] Keyword search failed for "${kw}" in r/${sub}:`, kwErr);
+            console.error(`[scanner] Search failed for "${kw}" in r/${sub}:`, kwErr);
           }
         }
+
+        // Also search with combined keywords for broader matches
+        if (keywords.length > 1) {
+          try {
+            const combinedQuery = keywords.join(' OR ');
+            const posts = await reddit.search(combinedQuery, {
+              subreddit: sub,
+              sort: 'relevance',
+              time: 'week',
+              limit: 100,
+            });
+            allPosts.push(...posts);
+          } catch (err) {
+            console.error(`[scanner] Combined search failed in r/${sub}:`, err);
+          }
+        }
+      } else {
+        // No keywords — browse new posts (fallback)
+        const posts = await reddit.browseSubreddit(sub, 'new', { limit: 50 });
+        allPosts.push(...posts);
       }
+
+      // Also search across ALL subreddits for the monitor's keywords (broader discovery)
+      // Only do this once per monitor, not per subreddit
     } catch (err) {
-      console.error(`[scanner] Error fetching r/${sub} via Composio:`, err);
+      console.error(`[scanner] Error fetching r/${sub}:`, err);
     }
   }
 
-  // Deduplicate
+  // Cross-subreddit search — find relevant posts ANYWHERE on Reddit
+  if (keywords.length > 0) {
+    try {
+      const globalQuery = keywords.join(' OR ');
+      const globalPosts = await reddit.search(globalQuery, {
+        sort: 'new',
+        time: 'day',
+        limit: 50,
+      });
+      allPosts.push(...globalPosts);
+    } catch (err) {
+      console.error(`[scanner] Global search failed:`, err);
+    }
+  }
+
+  // Deduplicate by post ID
   const seen = new Set<string>();
   const posts = allPosts.filter(p => {
-    if (seen.has(p.id)) return false;
+    if (!p.id || seen.has(p.id)) return false;
     seen.add(p.id);
     return true;
   });
 
-  // Filter by signal types and score
+  console.error(`[scanner] Fetched ${allPosts.length} posts, ${posts.length} unique after dedup`);
+
+  // Score and filter
   const results: Array<{
     title: string;
     subreddit: string;
@@ -565,6 +599,8 @@ async function scanMonitorComposio(
     const text = `${post.title} ${post.selftext ?? ''}`;
     const matches = matchPatterns(text);
 
+    // With real search, we may get relevant posts even without pattern matches.
+    // Still require at least one signal pattern for quality control.
     if (matches.length === 0) continue;
 
     const matchedCategories = matches.map(m => m.category);
@@ -583,11 +619,10 @@ async function scanMonitorComposio(
     const leadScore = scoreLeadPost(post);
     const signals = signalSummary(matches);
     const baseScore = Math.max(leadScore.total, matches.reduce((sum, m) => sum + m.weight, 0) * 10);
-    // Engagement-weighted boost: high upvotes + comments increase score
     const engagementBoost = Math.min(10, Math.floor(((post.ups || 0) + (post.num_comments || 0) * 2) / 10));
     const totalScore = baseScore + engagementBoost;
 
-    // Word-boundary keyword matching for additional relevance filtering
+    // Keyword relevance — posts found via search should inherently match, but double-check
     const keywordMatch = keywords.length === 0 || keywords.some(kw => matchesKeyword(text, kw));
 
     results.push({
@@ -606,17 +641,15 @@ async function scanMonitorComposio(
     });
   }
 
-  // Sort by score descending, prioritize keyword matches
+  // Sort: keyword matches first, then by score
   results.sort((a, b) => {
     if (a.keywordMatch !== b.keywordMatch) return a.keywordMatch ? -1 : 1;
     return b.score - a.score;
   });
 
-  // Store top results
   const topResults = results.slice(0, 50);
 
   for (const r of topResults) {
-    // Try to generate a dossier for high-scoring results; use its draft reply if available
     const dossier = await tryGenerateDossier(r, userId, monitor.name, db);
     const suggestedReply = dossier?.draftReply ?? generateSuggestedReply(r, monitor.name);
 
@@ -637,7 +670,7 @@ async function scanMonitorComposio(
     stats.resultsFound++;
   }
 
-  // Extract and upsert leads (users with high intent)
+  // Extract leads
   const highIntentResults = results.filter(r => r.leadScore >= 40);
   for (const r of highIntentResults) {
     if (r.author === '[deleted]' || r.author === 'AutoModerator') continue;
@@ -672,7 +705,7 @@ async function scanMonitorComposio(
     }
   }
 
-  // Update monitor lastScannedAt
+  // Update monitor
   await db
     .update(schema.monitor)
     .set({ lastScannedAt: new Date() })
@@ -680,7 +713,7 @@ async function scanMonitorComposio(
 
   stats.monitorsScanned++;
 
-  // Send alerts if results found
+  // Alerts
   if (topResults.length > 0) {
     const [user] = await db.select().from(schema.user).where(eq(schema.user.id, userId));
     if (user) {
@@ -706,18 +739,18 @@ async function scanMonitorComposio(
     }
   }
 
-  console.error(`[scanner] Monitor "${monitor.name}" (Composio): ${topResults.length} results, ${highIntentResults.length} leads`);
+  console.error(`[scanner] Monitor "${monitor.name}" (Direct API): ${topResults.length} results, ${highIntentResults.length} leads`);
 }
 
 /**
  * Factory: get the best available Reddit client for a user.
- * Tries Composio first, falls back to direct RedditClient.
+ * Tries Direct API (via Composio token) first, falls back to legacy RedditClient.
  * Exported for testing.
  */
 export async function getClientForUser(
   userId: string,
-): Promise<{ type: 'composio'; client: ComposioRedditClient } | { type: 'direct'; client: RedditClient } | null> {
-  // Try Composio first
+): Promise<{ type: 'direct-api'; client: DirectRedditClient } | { type: 'composio'; client: ComposioRedditClient } | { type: 'direct'; client: RedditClient } | null> {
+  // Try Direct Reddit API via Composio OAuth token (best option — real search)
   if (process.env.COMPOSIO_API_KEY) {
     try {
       const db = getDb();
@@ -735,7 +768,8 @@ export async function getClientForUser(
           connected = result.connected;
         }
         if (connected) {
-          return { type: 'composio', client: new ComposioRedditClient(getComposio(), entityId) };
+          const tokenProvider = new ComposioTokenProvider(getComposio(), connAccountId);
+          return { type: 'direct-api', client: new DirectRedditClient(tokenProvider) };
         }
       }
     } catch {
