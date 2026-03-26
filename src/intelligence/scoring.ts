@@ -182,16 +182,16 @@ export function scoreLeadPost(post: RedditPost): {
   const roleClarity = (decisionMaker ? 15 : techRole ? 10 : businessRole ? 8 : 0) + (hasFlair ? 3 : 0);
 
   // Urgency (0-15) — gradient: immediate > this week > general
-  const immediateUrgency = /\b(?:need (?:this )?asap|urgent(?:ly)? need|immediately need|right now)\b/i.test(text);
-  const nearTermUrgency = /\b(?:(?:need|want) (?:it |this )?(?:this week|this month)|deadline (?:is|coming)|by (?:end of|next) (?:week|month))\b/i.test(text);
-  const generalUrgency = /\b(?:need (?:this )?soon|time-sensitive|running out of time)\b/i.test(text);
+  const immediateUrgency = /\b(?:asap|urgent(?:ly)?|immediately|right now)\b/i.test(text);
+  const nearTermUrgency = /\b(?:this week|this month|deadline|by (?:end of|next))\b/i.test(text);
+  const generalUrgency = /\b(?:soon|quickly|time-sensitive)\b/i.test(text);
   const urgencyScore = immediateUrgency ? 15 : nearTermUrgency ? 12 : generalUrgency ? 6 : 0;
 
   // Budget signal (0-20) — strongest conversion predictor
   const budgetMentions = text.match(/\$\d[\d,]*/g) ?? [];
   const willingToPay = /\b(?:willing to pay|happy to pay|worth paying|pay for|budget (?:is|of|around))\b/i.test(text);
   const hasBudgetRange = /\$\d[\d,]*\s*(?:-|to)\s*\$\d[\d,]*/i.test(text);
-  const pricingInquiry = /\b(?:how much (?:does|is|would)|what(?:'s| is) the pricing|get a quote|pricing page)\b/i.test(text);
+  const pricingInquiry = /\b(?:how much|pricing|cost|price|quote)\b/i.test(text);
   const budgetSignal = Math.min(20,
     (budgetMentions.length > 0 ? 8 : 0) +
     (hasBudgetRange ? 6 : 0) +

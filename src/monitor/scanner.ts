@@ -35,9 +35,24 @@ import { getComposio, checkRedditConnection } from '../core/composio-auth.js';
  * Word-boundary keyword matching — replaces naive .includes() substring check.
  */
 function matchesKeyword(text: string, keyword: string): boolean {
-  const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const regex = new RegExp(`\\b${escaped}\\b`, 'i');
-  return regex.test(text);
+  const lower = text.toLowerCase();
+  const kwLower = keyword.toLowerCase().trim();
+  const words = kwLower.split(/\s+/).filter(w => w.length > 2); // skip tiny words like "a", "my"
+
+  // Short keywords (1-2 words): exact phrase match with word boundaries
+  if (words.length <= 2) {
+    const escaped = kwLower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`\\b${escaped}\\b`, 'i').test(text);
+  }
+
+  // Long keywords (3+ words): all significant words must appear in text
+  // This handles "customers keep cancelling" matching "my customers are cancelling"
+  const significantWords = words.filter(w => !['the', 'a', 'an', 'is', 'are', 'was', 'were', 'for', 'and', 'or', 'but', 'not', 'with', 'this', 'that', 'has', 'have', 'been', 'its', 'my', 'your', 'our', 'do', 'does'].includes(w));
+  if (significantWords.length === 0) return false;
+
+  const matched = significantWords.filter(w => lower.includes(w));
+  // Require at least 60% of significant words to match
+  return matched.length >= Math.ceil(significantWords.length * 0.6);
 }
 
 const PRO_SCAN_INTERVAL_MS = 1 * 60 * 60 * 1000; // 1 hour for pro users
