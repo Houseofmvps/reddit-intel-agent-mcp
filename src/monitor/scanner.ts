@@ -31,7 +31,7 @@ import { ComposioRedditClient } from '../reddit/composio-client.js';
 import { DirectRedditClient, ComposioTokenProvider, PublicRedditClient } from '../reddit/direct-reddit-client.js';
 import { getComposio, checkRedditConnection } from '../core/composio-auth.js';
 
-const STOP_WORDS = new Set(['the', 'a', 'an', 'is', 'are', 'was', 'were', 'for', 'and', 'or', 'but', 'not', 'with', 'this', 'that', 'has', 'have', 'been', 'its', 'my', 'your', 'our', 'do', 'does', 'to', 'of', 'in', 'on', 'at', 'by', 'it', 'i', 'me', 'we', 'they', 'so', 'if', 'can', 'how', 'what', 'why', 'who', 'all', 'every', 'out', 'up', 'about', 'their', 'keep', 'cant', "can't"]);
+const STOP_WORDS = new Set(['the', 'a', 'an', 'is', 'are', 'was', 'were', 'for', 'and', 'or', 'but', 'not', 'with', 'this', 'that', 'has', 'have', 'been', 'its', 'my', 'your', 'our', 'do', 'does', 'to', 'of', 'in', 'on', 'at', 'by', 'it', 'i', 'me', 'we', 'they', 'so', 'if', 'can', 'how', 'what', 'why', 'who', 'all', 'every', 'out', 'up', 'about', 'their', 'keep', 'cant', "can't", 'any', 'good', 'best', 'need', 'help', 'looking', 'just', 'like', 'also', 'get', 'got', 'use', 'using', 'make', 'want', 'know', 'thing', 'things', 'way', 'really', 'much', 'many', 'some', 'still', 'even', 'could', 'would', 'should', 'will']);
 
 /**
  * Extract significant words from a keyword phrase, removing stop words.
@@ -76,6 +76,8 @@ function buildSearchQueries(keywords: string[]): string[] {
 
 /**
  * Fuzzy keyword matching against post text.
+ * For long phrases, checks if any 2+ significant words co-occur.
+ * Single distinctive words (brand names, technical terms) match solo.
  */
 function matchesKeyword(text: string, keyword: string): boolean {
   const lower = text.toLowerCase();
@@ -83,14 +85,16 @@ function matchesKeyword(text: string, keyword: string): boolean {
 
   if (significant.length === 0) return lower.includes(keyword.toLowerCase().trim());
 
-  // 1-2 word keywords: exact match
-  if (significant.length <= 2) {
-    return significant.every(w => lower.includes(w));
-  }
-
-  // 3+ words: require 50% of significant words
   const matched = significant.filter(w => lower.includes(w));
-  return matched.length >= Math.ceil(significant.length * 0.5);
+
+  // Any 2+ significant words from the keyword appear → match
+  if (matched.length >= 2) return true;
+
+  // Single word match only if it's a distinctive term (brand name, technical term 5+ chars)
+  // This lets "churnkey" or "baremetrics" match alone, but not "rate" or "tool"
+  if (matched.length === 1 && matched[0].length >= 5) return true;
+
+  return false;
 }
 
 const PRO_SCAN_INTERVAL_MS = 1 * 60 * 60 * 1000; // 1 hour for pro users
