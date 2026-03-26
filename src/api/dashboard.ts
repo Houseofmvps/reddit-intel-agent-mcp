@@ -962,6 +962,63 @@ export async function handleDashboardRequest(
     return true;
   }
 
+  // ── POST /dashboard/expand-keywords — AI keyword expansion from product description ──
+  if (url === '/dashboard/expand-keywords' && req.method === 'POST') {
+    const body = await readBody(req) as { product?: string } | null;
+    if (!body?.product?.trim()) {
+      json(res, 400, { error: 'product description is required' });
+      return true;
+    }
+
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      json(res, 503, { error: 'AI not configured' });
+      return true;
+    }
+
+    try {
+      const { default: Anthropic } = await import('@anthropic-ai/sdk');
+      const client = new Anthropic({ apiKey });
+
+      const msg = await client.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 1024,
+        system: `You are a Reddit keyword researcher. Given a product description, generate search keywords that real people use on Reddit when they have the problem this product solves. Think about HOW people describe their pain — not marketing language, but real frustrated human language. Return valid JSON only.`,
+        messages: [{
+          role: 'user',
+          content: `Product: "${body.product}"
+
+Generate 3 categories of Reddit search keywords for monitoring:
+
+1. **problem_keywords**: 10-15 phrases people use when describing the problem this product solves (e.g. "losing customers", "churn rate too high", "subscribers cancelling"). These should be the words real people use on Reddit, not marketing jargon.
+
+2. **buyer_keywords**: 5-8 phrases people use when actively looking to buy a solution (e.g. "best tool for retention", "looking for churn software", "need help with cancellations").
+
+3. **competitor_keywords**: 3-5 known competitors or alternative products in this space.
+
+4. **recommended_subreddits**: 5-8 subreddits where these conversations happen.
+
+Return as JSON: { "problem_keywords": [...], "buyer_keywords": [...], "competitor_keywords": [...], "recommended_subreddits": [...] }`,
+        }],
+      });
+
+      const text = msg.content[0].type === 'text' ? msg.content[0].text : '';
+      // Extract JSON from response (handle markdown code blocks)
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        json(res, 500, { error: 'Failed to parse AI response' });
+        return true;
+      }
+
+      const keywords = JSON.parse(jsonMatch[0]);
+      json(res, 200, keywords);
+    } catch (err) {
+      console.error('[expand-keywords] error:', err);
+      json(res, 500, { error: 'Failed to expand keywords' });
+    }
+    return true;
+  }
+
   json(res, 404, { error: 'Dashboard route not found' });
   return true;
 }
