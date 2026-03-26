@@ -236,6 +236,11 @@ export async function handleDashboardRequest(
   const userId = session.user.id;
   const db = getDb();
 
+  // Look up user tier for pro-gating
+  const [currentUser] = await db.select({ tier: schema.user.tier }).from(schema.user).where(eq(schema.user.id, userId));
+  const userTier = currentUser?.tier ?? 'free';
+  const isPro = userTier === 'pro';
+
   // ── GET /dashboard/me ──
   if (url === '/dashboard/me' && req.method === 'GET') {
     const [u] = await db.select().from(schema.user).where(eq(schema.user.id, userId));
@@ -466,18 +471,39 @@ export async function handleDashboardRequest(
 
   // ── GET /dashboard/results ──
   if (url.startsWith('/dashboard/results') && req.method === 'GET') {
-    const results = await db.select().from(schema.scanResult)
+    const allResults = await db.select().from(schema.scanResult)
       .where(eq(schema.scanResult.userId, userId))
       .orderBy(schema.scanResult.createdAt)
       .limit(50);
-    json(res, 200, { results });
+
+    if (isPro) {
+      json(res, 200, { results: allResults, gatedCount: 0 });
+    } else {
+      const visible = allResults.filter(r => r.score < 70);
+      const gated = allResults.filter(r => r.score >= 70);
+      const lockedPreviews = gated.map(r => ({
+        id: r.id,
+        title: r.title,
+        score: r.score,
+        subreddit: r.subreddit,
+        locked: true,
+      }));
+      json(res, 200, { results: visible, gatedCount: gated.length, lockedResults: lockedPreviews });
+    }
     return true;
   }
 
   // ── GET /dashboard/leads ──
   if (url === '/dashboard/leads' && req.method === 'GET') {
-    const leads = await db.select().from(schema.lead).where(eq(schema.lead.userId, userId));
-    json(res, 200, { leads });
+    const allLeads = await db.select().from(schema.lead).where(eq(schema.lead.userId, userId));
+
+    if (isPro) {
+      json(res, 200, { leads: allLeads, gatedCount: 0 });
+    } else {
+      const visible = allLeads.slice(0, 20);
+      const gatedCount = Math.max(0, allLeads.length - 20);
+      json(res, 200, { leads: visible, gatedCount });
+    }
     return true;
   }
 
@@ -770,11 +796,18 @@ export async function handleDashboardRequest(
 
   // ── GET /dashboard/dossiers ──
   if (url === '/dashboard/dossiers' && req.method === 'GET') {
-    const dossiers = await db.select().from(schema.leadDossier)
+    const allDossiers = await db.select().from(schema.leadDossier)
       .where(eq(schema.leadDossier.userId, userId))
       .orderBy(desc(schema.leadDossier.conversionScore))
       .limit(50);
-    json(res, 200, { dossiers });
+
+    if (isPro) {
+      json(res, 200, { dossiers: allDossiers, gatedCount: 0 });
+    } else {
+      const visible = allDossiers.filter(d => d.conversionScore < 70);
+      const gatedCount = allDossiers.length - visible.length;
+      json(res, 200, { dossiers: visible, gatedCount });
+    }
     return true;
   }
 

@@ -134,15 +134,16 @@ export async function startHttp(port: number) {
 
   // ─── HTTP security ─────────────────────────────────────────
   const apiKey = process.env.REDDIT_INTEL_API_KEY?.trim() || null;
-  const IP_RATE_LIMIT = 120; // requests per window
   const IP_RATE_WINDOW_MS = 60_000; // 1 minute
-  const ipRateMap = new Map<string, { count: number; windowStart: number }>();
+  // Per-bucket rate limits: dashboard=60/min, authed-api=100/min, unauthed-api=30/min
+  const RATE_LIMITS = { dashboard: 60, authedApi: 100, unauthedApi: 30 } as const;
+  const ipRateMap = new Map<string, { dashboard: { count: number; windowStart: number }; api: { count: number; windowStart: number } }>();
 
   // Cleanup stale IP entries every 5 minutes
   const ipCleanupInterval = setInterval(() => {
     const cutoff = Date.now() - IP_RATE_WINDOW_MS;
     for (const [ip, entry] of ipRateMap) {
-      if (entry.windowStart < cutoff) ipRateMap.delete(ip);
+      if (entry.dashboard.windowStart < cutoff && entry.api.windowStart < cutoff) ipRateMap.delete(ip);
     }
   }, 5 * 60_000);
   ipCleanupInterval.unref();
@@ -226,7 +227,9 @@ export async function startHttp(port: number) {
     const origin = req.headers.origin ?? '';
     const trustedOrigins = ['https://buildradar.xyz', 'https://www.buildradar.xyz', 'https://app.buildradar.xyz', 'http://localhost:5173', 'http://localhost:3000'];
     const isTrusted = trustedOrigins.includes(origin);
-    res.setHeader('Access-Control-Allow-Origin', isTrusted ? origin : '*');
+    if (isTrusted) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+    }
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept, MCP-Session-Id, Authorization, Cache-Control');
     res.setHeader('Access-Control-Expose-Headers', 'MCP-Session-Id');
@@ -240,21 +243,38 @@ export async function startHttp(port: number) {
     const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim()
       ?? req.socket.remoteAddress ?? 'unknown';
     const now = Date.now();
-    const ipEntry = ipRateMap.get(clientIp);
-    if (ipEntry && now - ipEntry.windowStart < IP_RATE_WINDOW_MS) {
-      ipEntry.count++;
-      if (ipEntry.count > IP_RATE_LIMIT) {
-        res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' });
-        res.end(JSON.stringify({ error: 'Too many requests. Max 120 requests per minute.' }));
+    const isDashboardRoute = url.startsWith('/dashboard/');
+    const isAuthenticated = !!(req.headers['authorization']?.toString().trim());
+    const bucketLimit = isDashboardRoute
+      ? RATE_LIMITS.dashboard
+      : isAuthenticated ? RATE_LIMITS.authedApi : RATE_LIMITS.unauthedApi;
+    const bucketKey = isDashboardRoute ? 'dashboard' : 'api';
+
+    let ipEntry = ipRateMap.get(clientIp);
+    if (!ipEntry) {
+      ipEntry = { dashboard: { count: 0, windowStart: now }, api: { count: 0, windowStart: now } };
+      ipRateMap.set(clientIp, ipEntry);
+    }
+    const bucket = ipEntry[bucketKey];
+    if (now - bucket.windowStart >= IP_RATE_WINDOW_MS) {
+      bucket.count = 1;
+      bucket.windowStart = now;
+    } else {
+      bucket.count++;
+      if (bucket.count > bucketLimit) {
+        const retryAfter = Math.ceil((bucket.windowStart + IP_RATE_WINDOW_MS - now) / 1000);
+        res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': String(retryAfter) });
+        res.end(JSON.stringify({ error: 'Rate limit exceeded', retryAfter }));
         return;
       }
-    } else {
-      ipRateMap.set(clientIp, { count: 1, windowStart: now });
     }
 
     // ─── Security headers ─────────────────────────────────
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('X-XSS-Protection', '1; mode=block');
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
 
     // ─── API key auth (if REDDIT_INTEL_API_KEY is set) ──────
     const apiKeyRequired = !!apiKey;
