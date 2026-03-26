@@ -31,28 +31,66 @@ import { ComposioRedditClient } from '../reddit/composio-client.js';
 import { DirectRedditClient, ComposioTokenProvider } from '../reddit/direct-reddit-client.js';
 import { getComposio, checkRedditConnection } from '../core/composio-auth.js';
 
+const STOP_WORDS = new Set(['the', 'a', 'an', 'is', 'are', 'was', 'were', 'for', 'and', 'or', 'but', 'not', 'with', 'this', 'that', 'has', 'have', 'been', 'its', 'my', 'your', 'our', 'do', 'does', 'to', 'of', 'in', 'on', 'at', 'by', 'it', 'i', 'me', 'we', 'they', 'so', 'if', 'can', 'how', 'what', 'why', 'who', 'all', 'every', 'out', 'up', 'about', 'their', 'keep', 'cant', "can't"]);
+
 /**
- * Word-boundary keyword matching — replaces naive .includes() substring check.
+ * Extract significant words from a keyword phrase, removing stop words.
+ */
+function extractSignificant(phrase: string): string[] {
+  return phrase.toLowerCase().split(/\s+/)
+    .map(w => w.replace(/[^a-z0-9]/g, ''))
+    .filter(w => w.length > 2 && !STOP_WORDS.has(w));
+}
+
+/**
+ * Convert user keywords into effective Reddit search queries.
+ * Long phrases get converted to core terms joined with AND.
+ * Short keywords stay as-is. Groups into batched OR queries for efficiency.
+ */
+function buildSearchQueries(keywords: string[]): string[] {
+  const queries: string[] = [];
+  const shortTerms: string[] = [];
+
+  for (const kw of keywords) {
+    const significant = extractSignificant(kw);
+    if (significant.length <= 2) {
+      // Short keyword — collect to batch into OR query
+      shortTerms.push(significant.join(' ') || kw.trim());
+    } else {
+      // Long phrase — pick top 2-3 most distinctive words
+      // Reddit search works best with 2-3 terms
+      const core = significant.slice(0, 3);
+      queries.push(core.join(' '));
+    }
+  }
+
+  // Batch short terms into groups of 5 with OR (Reddit search limit)
+  for (let i = 0; i < shortTerms.length; i += 5) {
+    const batch = shortTerms.slice(i, i + 5);
+    queries.push(batch.join(' OR '));
+  }
+
+  // Deduplicate
+  return [...new Set(queries)];
+}
+
+/**
+ * Fuzzy keyword matching against post text.
  */
 function matchesKeyword(text: string, keyword: string): boolean {
   const lower = text.toLowerCase();
-  const kwLower = keyword.toLowerCase().trim();
-  const words = kwLower.split(/\s+/).filter(w => w.length > 2); // skip tiny words like "a", "my"
+  const significant = extractSignificant(keyword);
 
-  // Short keywords (1-2 words): exact phrase match with word boundaries
-  if (words.length <= 2) {
-    const escaped = kwLower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    return new RegExp(`\\b${escaped}\\b`, 'i').test(text);
+  if (significant.length === 0) return lower.includes(keyword.toLowerCase().trim());
+
+  // 1-2 word keywords: exact match
+  if (significant.length <= 2) {
+    return significant.every(w => lower.includes(w));
   }
 
-  // Long keywords (3+ words): all significant words must appear in text
-  // This handles "customers keep cancelling" matching "my customers are cancelling"
-  const significantWords = words.filter(w => !['the', 'a', 'an', 'is', 'are', 'was', 'were', 'for', 'and', 'or', 'but', 'not', 'with', 'this', 'that', 'has', 'have', 'been', 'its', 'my', 'your', 'our', 'do', 'does'].includes(w));
-  if (significantWords.length === 0) return false;
-
-  const matched = significantWords.filter(w => lower.includes(w));
-  // Require at least 60% of significant words to match
-  return matched.length >= Math.ceil(significantWords.length * 0.6);
+  // 3+ words: require 50% of significant words
+  const matched = significant.filter(w => lower.includes(w));
+  return matched.length >= Math.ceil(significant.length * 0.5);
 }
 
 const PRO_SCAN_INTERVAL_MS = 1 * 60 * 60 * 1000; // 1 hour for pro users
@@ -531,14 +569,17 @@ async function scanMonitorDirect(
 
   const allPosts: RedditPost[] = [];
 
+  // Build optimized search queries from user keywords
+  const searchQueries = keywords.length > 0 ? buildSearchQueries(keywords) : [];
+  console.error(`[scanner] ${keywords.length} keywords → ${searchQueries.length} search queries: ${searchQueries.slice(0, 5).join(' | ')}${searchQueries.length > 5 ? '...' : ''}`);
+
   for (const sub of subreddits) {
     try {
-      if (keywords.length > 0) {
-        // REAL SEARCH — this is the game changer.
-        // Search each keyword within the subreddit using Reddit's search API.
-        for (const kw of keywords) {
+      if (searchQueries.length > 0) {
+        // Search each optimized query in this subreddit
+        for (const query of searchQueries) {
           try {
-            const posts = await reddit.search(kw, {
+            const posts = await reddit.search(query, {
               subreddit: sub,
               sort: 'new',
               time: 'week',
@@ -546,23 +587,7 @@ async function scanMonitorDirect(
             });
             allPosts.push(...posts);
           } catch (kwErr) {
-            console.error(`[scanner] Search failed for "${kw}" in r/${sub}:`, kwErr);
-          }
-        }
-
-        // Also search with combined keywords for broader matches
-        if (keywords.length > 1) {
-          try {
-            const combinedQuery = keywords.join(' OR ');
-            const posts = await reddit.search(combinedQuery, {
-              subreddit: sub,
-              sort: 'relevance',
-              time: 'week',
-              limit: 100,
-            });
-            allPosts.push(...posts);
-          } catch (err) {
-            console.error(`[scanner] Combined search failed in r/${sub}:`, err);
+            console.error(`[scanner] Search failed for "${query}" in r/${sub}:`, kwErr);
           }
         }
       } else {
@@ -570,26 +595,25 @@ async function scanMonitorDirect(
         const posts = await reddit.browseSubreddit(sub, 'new', { limit: 50 });
         allPosts.push(...posts);
       }
-
-      // Also search across ALL subreddits for the monitor's keywords (broader discovery)
-      // Only do this once per monitor, not per subreddit
     } catch (err) {
       console.error(`[scanner] Error fetching r/${sub}:`, err);
     }
   }
 
-  // Cross-subreddit search — find relevant posts ANYWHERE on Reddit
-  if (keywords.length > 0) {
-    try {
-      const globalQuery = keywords.join(' OR ');
-      const globalPosts = await reddit.search(globalQuery, {
-        sort: 'new',
-        time: 'day',
-        limit: 50,
-      });
-      allPosts.push(...globalPosts);
-    } catch (err) {
-      console.error(`[scanner] Global search failed:`, err);
+  // Cross-subreddit global search for broader discovery
+  if (searchQueries.length > 0) {
+    // Use the first few most important queries globally
+    for (const query of searchQueries.slice(0, 3)) {
+      try {
+        const globalPosts = await reddit.search(query, {
+          sort: 'relevance',
+          time: 'week',
+          limit: 50,
+        });
+        allPosts.push(...globalPosts);
+      } catch (err) {
+        console.error(`[scanner] Global search failed for "${query}":`, err);
+      }
     }
   }
 
