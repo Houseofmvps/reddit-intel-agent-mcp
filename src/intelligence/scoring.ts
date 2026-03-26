@@ -167,41 +167,70 @@ export function scoreLeadPost(post: RedditPost): {
   const text = `${post.title} ${post.selftext ?? ''}`;
   const matches = matchPatterns(text);
 
-  // Intent (0-30)
+  // Intent (0-30) — weighted by signal strength, not just count
   const intentWeight = categoryWeight(matches, 'buyer_intent');
-  const intent = Math.min(30, intentWeight * 5);
+  const switchWeight = categoryWeight(matches, 'switching');
+  // Switching intent is a strong buying signal too
+  const combinedIntent = intentWeight + Math.floor(switchWeight * 0.5);
+  const intent = Math.min(30, combinedIntent * 3);
 
-  // Role clarity (0-20): flair or self-identified role
-  const hasRole = /\b(?:founder|ceo|cto|developer|marketer|agency|consultant|freelancer|manager|engineer|designer)\b/i.test(text);
+  // Role clarity (0-15): gradient scoring for decision-maker roles
+  const decisionMaker = /\b(?:founder|ceo|cto|vp|head of|director|owner)\b/i.test(text);
+  const techRole = /\b(?:developer|engineer|architect|devops|sre|lead)\b/i.test(text);
+  const businessRole = /\b(?:marketer|agency|consultant|freelancer|manager|designer|product manager)\b/i.test(text);
   const hasFlair = !!post.author_flair_text;
-  const roleClarity = (hasRole ? 12 : 0) + (hasFlair ? 8 : 0);
+  const roleClarity = (decisionMaker ? 15 : techRole ? 10 : businessRole ? 8 : 0) + (hasFlair ? 3 : 0);
 
-  // Urgency (0-15)
-  const urgencyMatch = /\b(?:asap|urgent|deadline|this week|immediately|right now|today)\b/i.test(text);
-  const urgencyScore = urgencyMatch ? 15 : 0;
+  // Urgency (0-15) — gradient: immediate > this week > general
+  const immediateUrgency = /\b(?:asap|urgent|immediately|right now|today)\b/i.test(text);
+  const nearTermUrgency = /\b(?:this week|this month|deadline|by (?:end of|next))\b/i.test(text);
+  const generalUrgency = /\b(?:soon|quickly|fast|time-sensitive)\b/i.test(text);
+  const urgencyScore = immediateUrgency ? 15 : nearTermUrgency ? 12 : generalUrgency ? 6 : 0;
 
-  // Budget signal (0-15)
-  const budgetPatterns = text.match(/\$\d+/g) ?? [];
-  const willingToPay = /\b(?:willing to pay|budget|worth paying)\b/i.test(text);
-  const budgetSignal = Math.min(15, budgetPatterns.length * 5 + (willingToPay ? 10 : 0));
+  // Budget signal (0-20) — strongest conversion predictor
+  const budgetMentions = text.match(/\$\d[\d,]*/g) ?? [];
+  const willingToPay = /\b(?:willing to pay|happy to pay|worth paying|pay for|budget (?:is|of|around))\b/i.test(text);
+  const hasBudgetRange = /\$\d[\d,]*\s*(?:-|to)\s*\$\d[\d,]*/i.test(text);
+  const pricingInquiry = /\b(?:how much|pricing|cost|price|quote)\b/i.test(text);
+  const budgetSignal = Math.min(20,
+    (budgetMentions.length > 0 ? 8 : 0) +
+    (hasBudgetRange ? 6 : 0) +
+    (willingToPay ? 10 : 0) +
+    (pricingInquiry ? 4 : 0)
+  );
 
-  // Account quality (0-10) — we can only check basics without fetching user profile
-  const accountQuality = post.score > 1 ? 5 : 0; // upvoted = not spam
-  const acctBonus = post.author !== '[deleted]' ? 5 : 0;
+  // Account quality (0-10) — engagement signals indicate real user
+  const engagementScore = Math.min(5, Math.floor(Math.log2(Math.max(1, post.score)) * 1.5));
+  const hasComments = post.num_comments > 2 ? 3 : post.num_comments > 0 ? 1 : 0;
+  const notDeleted = post.author !== '[deleted]' && post.author !== 'AutoModerator' ? 2 : 0;
+  const accountQuality = engagementScore + hasComments + notDeleted;
+
+  // Signal stacking bonus (0-10): multiple strong signals = much higher conversion
+  const strongSignalCount = [
+    intentWeight >= 5,         // strong buyer intent
+    switchWeight >= 3,         // switching/comparing
+    budgetSignal >= 8,         // budget mentioned
+    urgencyScore >= 10,        // time pressure
+    roleClarity >= 10,         // decision-maker
+    categoryWeight(matches, 'pain') >= 4, // deep pain
+  ].filter(Boolean).length;
+  const stackingBonus = strongSignalCount >= 4 ? 10 : strongSignalCount >= 3 ? 6 : strongSignalCount >= 2 ? 3 : 0;
 
   // Budget hints
   const budgetHints: string[] = [];
-  for (const bp of budgetPatterns) budgetHints.push(bp);
+  for (const bp of budgetMentions) budgetHints.push(bp);
   if (willingToPay) budgetHints.push('expressed willingness to pay');
+  if (hasBudgetRange) budgetHints.push('specified budget range');
+  if (pricingInquiry) budgetHints.push('asking about pricing');
 
-  const total = Math.min(100, intent + roleClarity + urgencyScore + budgetSignal + accountQuality + acctBonus);
+  const total = Math.min(100, intent + roleClarity + urgencyScore + budgetSignal + accountQuality + stackingBonus);
 
   return {
     intent,
     role_clarity: roleClarity,
     urgency: urgencyScore,
     budget_signal: budgetSignal,
-    account_quality: accountQuality + acctBonus,
+    account_quality: accountQuality,
     total,
     signals: matches.filter(m => m.weight > 0).map(m => m.label),
     budget_hints: budgetHints,

@@ -62,11 +62,17 @@ const PATTERN_RULES: PatternRule[] = [
   // ─── Buyer intent signals ─────────────────────────────────
   { regex: /\b(?:looking for|searching for|need a|need an|anyone know of)\b/i, label: 'seeking', category: 'buyer_intent', weight: 3 },
   { regex: /\b(?:recommend|recommendation|suggestions?|which .+ should i)\b/i, label: 'asking_rec', category: 'buyer_intent', weight: 3 },
-  { regex: /\b(?:willing to pay|budget|worth paying|pay for)\b/i, label: 'budget_signal', category: 'buyer_intent', weight: 4 },
+  { regex: /\b(?:willing to pay|budget|worth paying|pay for|happy to pay)\b/i, label: 'budget_signal', category: 'buyer_intent', weight: 5 },
   { regex: /\b(?:best .+(?:tool|software|app|platform|service)|what .+ do you use)\b/i, label: 'tool_search', category: 'buyer_intent', weight: 3 },
   { regex: /\b(?:buy|purchase|subscribe|pricing|cost|how much)\b/i, label: 'purchase_signal', category: 'buyer_intent', weight: 2 },
-  { regex: /\b(?:asap|urgent|deadline|this week|immediately)\b/i, label: 'urgency', category: 'buyer_intent', weight: 3 },
-  { regex: /\b(?:for my (?:team|company|business|startup|agency))\b/i, label: 'business_context', category: 'buyer_intent', weight: 3 },
+  { regex: /\b(?:asap|urgent|deadline|this week|immediately|right now|today)\b/i, label: 'urgency', category: 'buyer_intent', weight: 4 },
+  { regex: /\b(?:for my (?:team|company|business|startup|agency|client))\b/i, label: 'business_context', category: 'buyer_intent', weight: 4 },
+  { regex: /\b(?:evaluating|trialing|testing out|trying out|demo|proof of concept|poc)\b/i, label: 'active_evaluation', category: 'buyer_intent', weight: 5 },
+  { regex: /\b(?:by (?:end of|next) (?:week|month|quarter)|by q[1-4]|this quarter|this month)\b/i, label: 'timeline', category: 'buyer_intent', weight: 5 },
+  { regex: /\b(?:team of \d+|\d+ employees|\d+ person team|\d+ devs|\d+ engineers)\b/i, label: 'team_size', category: 'buyer_intent', weight: 4 },
+  { regex: /\b(?:enterprise|b2b|saas|our stack|tech stack|production)\b/i, label: 'enterprise_context', category: 'buyer_intent', weight: 3 },
+  { regex: /\b(?:shortlist|narrowed down|final (?:two|three|candidates)|deciding between)\b/i, label: 'final_selection', category: 'buyer_intent', weight: 5 },
+  { regex: /\b(?:onboard|implement|integrate|deploy|roll out|set up for)\b/i, label: 'implementation_intent', category: 'buyer_intent', weight: 4 },
 
   // ─── Switching intent ─────────────────────────────────────
   { regex: /\b(?:switch(?:ed|ing)? (?:from|to|away)|moved? (?:from|to)|migrat(?:ed|ing))\b/i, label: 'switching', category: 'switching', weight: 3 },

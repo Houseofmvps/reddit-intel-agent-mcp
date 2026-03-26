@@ -369,8 +369,9 @@ async function scanMonitor(
     const leadScore = scoreLeadPost(post);
     const signals = signalSummary(matches);
 
-    // Score: use lead score total as the primary metric (0-100)
-    const totalScore = Math.max(leadScore.total, matches.reduce((sum, m) => sum + m.weight, 0) * 10);
+    // Score: lead score is the primary metric. Pattern weight sum is a minor boost, not a multiplier.
+    const patternBoost = Math.min(15, matches.reduce((sum, m) => sum + Math.max(0, m.weight), 0));
+    const totalScore = Math.max(leadScore.total, leadScore.total + patternBoost);
 
     results.push({
       title: post.title,
@@ -618,9 +619,10 @@ async function scanMonitorDirect(
 
     const leadScore = scoreLeadPost(post);
     const signals = signalSummary(matches);
-    const baseScore = Math.max(leadScore.total, matches.reduce((sum, m) => sum + m.weight, 0) * 10);
+    // Lead score is primary. Pattern weight is a minor boost (capped at 15). Engagement adds up to 10.
+    const patternBoost = Math.min(15, matches.reduce((sum, m) => sum + Math.max(0, m.weight), 0));
     const engagementBoost = Math.min(10, Math.floor(((post.ups || 0) + (post.num_comments || 0) * 2) / 10));
-    const totalScore = baseScore + engagementBoost;
+    const totalScore = leadScore.total + patternBoost + engagementBoost;
 
     // Keyword relevance — posts found via search should inherently match, but double-check
     const keywordMatch = keywords.length === 0 || keywords.some(kw => matchesKeyword(text, kw));
