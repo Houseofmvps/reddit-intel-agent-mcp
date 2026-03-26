@@ -350,11 +350,15 @@ async function scanMonitor(
     const text = `${post.title} ${post.selftext ?? ''}`;
     const matches = matchPatterns(text);
 
-    if (matches.length === 0) continue;
+    // Check if post matches any monitor keyword (keyword match alone is valuable)
+    const keywordHit = keywords.length > 0 && keywords.some(kw => matchesKeyword(text, kw));
+
+    // Posts must have signal patterns OR match a keyword
+    if (matches.length === 0 && !keywordHit) continue;
 
     // Check if any matched signal type is in the monitor's config
     const matchedCategories = matches.map(m => m.category);
-    const relevant = signalTypes.some(st => {
+    const hasSignal = signalTypes.some(st => {
       if (st === 'pain_point') return hasCategory(matches, 'pain') || hasCategory(matches, 'frustration');
       if (st === 'buyer_intent') return hasCategory(matches, 'buyer_intent');
       if (st === 'workaround') return hasCategory(matches, 'workaround');
@@ -364,14 +368,18 @@ async function scanMonitor(
       return matchedCategories.includes(st as PatternCategory);
     });
 
-    if (!relevant) continue;
+    // Include if: has matching signal patterns OR matches a keyword
+    if (!hasSignal && !keywordHit) continue;
 
     const leadScore = scoreLeadPost(post);
     const signals = signalSummary(matches);
+    if (keywordHit && signals.length === 0) signals.push('keyword_match');
 
     // Score: lead score is the primary metric. Pattern weight sum is a minor boost, not a multiplier.
     const patternBoost = Math.min(15, matches.reduce((sum, m) => sum + Math.max(0, m.weight), 0));
-    const totalScore = Math.max(leadScore.total, leadScore.total + patternBoost);
+    // Keyword matches get a base score of 25 if no other signals
+    const keywordBoost = keywordHit && matches.length === 0 ? 25 : 0;
+    const totalScore = Math.max(leadScore.total + patternBoost + keywordBoost, keywordHit ? 20 : 0);
 
     results.push({
       title: post.title,
@@ -600,12 +608,14 @@ async function scanMonitorDirect(
     const text = `${post.title} ${post.selftext ?? ''}`;
     const matches = matchPatterns(text);
 
-    // With real search, we may get relevant posts even without pattern matches.
-    // Still require at least one signal pattern for quality control.
-    if (matches.length === 0) continue;
+    // Check if post matches any monitor keyword
+    const keywordMatch = keywords.length > 0 && keywords.some(kw => matchesKeyword(text, kw));
+
+    // Posts must have signal patterns OR match a keyword
+    if (matches.length === 0 && !keywordMatch) continue;
 
     const matchedCategories = matches.map(m => m.category);
-    const relevant = signalTypes.some(st => {
+    const hasSignal = signalTypes.some(st => {
       if (st === 'pain_point') return hasCategory(matches, 'pain') || hasCategory(matches, 'frustration');
       if (st === 'buyer_intent') return hasCategory(matches, 'buyer_intent');
       if (st === 'workaround') return hasCategory(matches, 'workaround');
@@ -615,17 +625,19 @@ async function scanMonitorDirect(
       return matchedCategories.includes(st as PatternCategory);
     });
 
-    if (!relevant) continue;
+    // Include if: has matching signal patterns OR matches a keyword
+    if (!hasSignal && !keywordMatch) continue;
 
     const leadScore = scoreLeadPost(post);
     const signals = signalSummary(matches);
+    if (keywordMatch && signals.length === 0) signals.push('keyword_match');
+
     // Lead score is primary. Pattern weight is a minor boost (capped at 15). Engagement adds up to 10.
     const patternBoost = Math.min(15, matches.reduce((sum, m) => sum + Math.max(0, m.weight), 0));
     const engagementBoost = Math.min(10, Math.floor(((post.ups || 0) + (post.num_comments || 0) * 2) / 10));
-    const totalScore = leadScore.total + patternBoost + engagementBoost;
-
-    // Keyword relevance — posts found via search should inherently match, but double-check
-    const keywordMatch = keywords.length === 0 || keywords.some(kw => matchesKeyword(text, kw));
+    // Keyword matches get a base score of 25 if no other signals
+    const keywordBoost = keywordMatch && matches.length === 0 ? 25 : 0;
+    const totalScore = Math.max(leadScore.total + patternBoost + engagementBoost + keywordBoost, keywordMatch ? 20 : 0);
 
     results.push({
       title: post.title,
