@@ -216,6 +216,103 @@ export class DirectRedditClient {
 }
 
 /**
+ * Public Reddit API client — no auth needed.
+ * Uses www.reddit.com (not oauth.reddit.com).
+ * Rate limited to ~10 req/min by Reddit, but good enough as a fallback.
+ */
+export class PublicRedditClient {
+  private lastRequest = 0;
+  private readonly minDelay = 2000; // 2s between requests to avoid 429
+
+  async search(query: string, opts: DirectSearchOptions = {}): Promise<RedditPost[]> {
+    const { subreddit, sort = 'relevance', time = 'week', limit = 100 } = opts;
+
+    const params = new URLSearchParams({
+      q: query,
+      sort,
+      t: time,
+      limit: String(Math.min(limit, 100)),
+      type: 'link',
+      restrict_sr: subreddit ? 'on' : 'off',
+    });
+
+    const base = subreddit
+      ? `https://www.reddit.com/r/${subreddit}/search.json`
+      : `https://www.reddit.com/search.json`;
+
+    return this.request(`${base}?${params}`);
+  }
+
+  async browseSubreddit(
+    subreddit: string,
+    sort: 'new' | 'hot' | 'top' | 'rising' = 'new',
+    opts: { limit?: number; time?: string } = {},
+  ): Promise<RedditPost[]> {
+    subreddit = subreddit.replace(/^r\//, '').trim();
+    const { limit = 50, time = 'day' } = opts;
+
+    const params = new URLSearchParams({ limit: String(Math.min(limit, 100)) });
+    if (sort === 'top') params.set('t', time);
+
+    return this.request(`https://www.reddit.com/r/${subreddit}/${sort}.json?${params}`);
+  }
+
+  private async request(url: string): Promise<RedditPost[]> {
+    // Simple rate limiting
+    const now = Date.now();
+    const wait = this.lastRequest + this.minDelay - now;
+    if (wait > 0) await new Promise(r => setTimeout(r, wait));
+    this.lastRequest = Date.now();
+
+    const resp = await fetch(url, {
+      headers: { 'User-Agent': 'BuildRadar/2.0 (by /u/BuildRadarBot)' },
+    });
+
+    if (!resp.ok) {
+      console.error(`[public-reddit] ${resp.status} for ${url}`);
+      return [];
+    }
+
+    const data: any = await resp.json();
+    const children = data?.data?.children;
+    if (!Array.isArray(children)) return [];
+
+    return children
+      .filter((c: any) => c.kind === 't3')
+      .map((c: any) => this.normalizePost(c.data));
+  }
+
+  private normalizePost(p: any): RedditPost {
+    const subreddit = String(p.subreddit ?? '');
+    const permalink = String(p.permalink ?? `/r/${subreddit}/comments/${p.id}/`);
+    return {
+      id: String(p.id ?? ''),
+      title: String(p.title ?? ''),
+      author: String(p.author ?? '[deleted]'),
+      subreddit,
+      subreddit_name_prefixed: `r/${subreddit}`,
+      score: Number(p.score ?? 0),
+      num_comments: Number(p.num_comments ?? 0),
+      created_utc: Number(p.created_utc ?? 0),
+      selftext: p.selftext != null ? String(p.selftext) : undefined,
+      url: String(p.url ?? `https://www.reddit.com${permalink}`),
+      permalink,
+      is_video: p.is_video === true,
+      is_self: p.is_self === true,
+      over_18: p.over_18 === true,
+      stickied: p.stickied === true,
+      locked: p.locked === true,
+      link_flair_text: p.link_flair_text != null ? String(p.link_flair_text) : undefined,
+      author_flair_text: p.author_flair_text != null ? String(p.author_flair_text) : undefined,
+      distinguished: p.distinguished != null ? String(p.distinguished) : undefined,
+      ups: Number(p.ups ?? p.score ?? 0),
+      downs: Number(p.downs ?? 0),
+      upvote_ratio: p.upvote_ratio != null ? Number(p.upvote_ratio) : undefined,
+    };
+  }
+}
+
+/**
  * Token provider that fetches the access token from Composio's connected account.
  * Re-fetches on each call to handle token rotation/refresh.
  */

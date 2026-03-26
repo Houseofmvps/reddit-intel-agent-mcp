@@ -28,7 +28,7 @@ import type { RedditPost } from '../types/index.js';
 import { generateDossier } from '../intelligence/dossier.js';
 import { sendAlert, type AlertPayload } from './alerts.js';
 import { ComposioRedditClient } from '../reddit/composio-client.js';
-import { DirectRedditClient, ComposioTokenProvider } from '../reddit/direct-reddit-client.js';
+import { DirectRedditClient, ComposioTokenProvider, PublicRedditClient } from '../reddit/direct-reddit-client.js';
 import { getComposio, checkRedditConnection } from '../core/composio-auth.js';
 
 const STOP_WORDS = new Set(['the', 'a', 'an', 'is', 'are', 'was', 'were', 'for', 'and', 'or', 'but', 'not', 'with', 'this', 'that', 'has', 'have', 'been', 'its', 'my', 'your', 'our', 'do', 'does', 'to', 'of', 'in', 'on', 'at', 'by', 'it', 'i', 'me', 'we', 'they', 'so', 'if', 'can', 'how', 'what', 'why', 'who', 'all', 'every', 'out', 'up', 'about', 'their', 'keep', 'cant', "can't"]);
@@ -285,15 +285,20 @@ async function scanUserMonitors(
           // Use DirectRedditClient with the OAuth token from Composio
           const tokenProvider = new ComposioTokenProvider(getComposio(), connAccountId);
           const directClient = new DirectRedditClient(tokenProvider);
+          let oauthWorked = false;
           for (const monitor of monitors) {
             try {
+              const before = stats.resultsFound;
               await scanMonitorDirect(userId, monitor, directClient, stats);
+              if (stats.resultsFound > before) oauthWorked = true;
             } catch (err) {
               console.error(`[scanner] Error scanning monitor ${monitor.id} via Direct API:`, err);
               stats.errors++;
             }
           }
-          return;
+          if (oauthWorked) return;
+          // OAuth returned 0 results — fall through to public API fallback
+          console.error(`[scanner] Composio OAuth returned 0 results, falling back to public API`);
         }
       }
     } catch (err) {
@@ -309,7 +314,17 @@ async function scanUserMonitors(
     .limit(1);
 
   if (creds.length === 0) {
-    console.error(`[scanner] User ${userId} has no Reddit credentials, skipping`);
+    // No legacy creds either — use public Reddit API as last resort
+    console.error(`[scanner] User ${userId} has no Reddit credentials, using public API fallback`);
+    const publicClient = new PublicRedditClient();
+    for (const monitor of monitors) {
+      try {
+        await scanMonitorDirect(userId, monitor, publicClient as any, stats);
+      } catch (err) {
+        console.error(`[scanner] Public API scan failed for monitor ${monitor.id}:`, err);
+        stats.errors++;
+      }
+    }
     return;
   }
 
