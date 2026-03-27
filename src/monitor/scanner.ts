@@ -31,7 +31,10 @@ import { ComposioRedditClient } from '../reddit/composio-client.js';
 import { DirectRedditClient, ComposioTokenProvider, PublicRedditClient } from '../reddit/direct-reddit-client.js';
 import { getComposio, checkRedditConnection } from '../core/composio-auth.js';
 
-const STOP_WORDS = new Set(['the', 'a', 'an', 'is', 'are', 'was', 'were', 'for', 'and', 'or', 'but', 'not', 'with', 'this', 'that', 'has', 'have', 'been', 'its', 'my', 'your', 'our', 'do', 'does', 'to', 'of', 'in', 'on', 'at', 'by', 'it', 'i', 'me', 'we', 'they', 'so', 'if', 'can', 'how', 'what', 'why', 'who', 'all', 'every', 'out', 'up', 'about', 'their', 'keep', 'cant', "can't", 'any', 'good', 'best', 'need', 'help', 'looking', 'just', 'like', 'also', 'get', 'got', 'use', 'using', 'make', 'want', 'know', 'thing', 'things', 'way', 'really', 'much', 'many', 'some', 'still', 'even', 'could', 'would', 'should', 'will']);
+const STOP_WORDS = new Set(['the', 'a', 'an', 'is', 'are', 'was', 'were', 'for', 'and', 'or', 'but', 'not', 'with', 'this', 'that', 'has', 'have', 'been', 'its', 'my', 'your', 'our', 'do', 'does', 'to', 'of', 'in', 'on', 'at', 'by', 'it', 'i', 'me', 'we', 'they', 'so', 'if', 'can', 'how', 'what', 'why', 'who', 'all', 'every', 'out', 'up', 'about', 'their', 'keep', 'cant', "can't", 'any', 'good', 'best', 'need', 'help', 'looking', 'just', 'like', 'also', 'get', 'got', 'use', 'using', 'make', 'want', 'know', 'thing', 'things', 'way', 'really', 'much', 'many', 'some', 'still', 'even', 'could', 'would', 'should', 'will',
+  // SaaS-generic words that match everything in business subreddits
+  'customer', 'customers', 'user', 'users', 'tool', 'tools', 'software', 'platform', 'saas', 'product', 'service', 'company', 'business', 'startup', 'founder', 'team', 'revenue', 'growth', 'feature', 'features', 'pricing', 'plan', 'data', 'free', 'paid',
+]);
 
 /**
  * Extract significant words from a keyword phrase, removing stop words.
@@ -94,63 +97,92 @@ function buildSearchQueries(keywords: string[]): string[] {
 }
 
 /**
- * Keyword matching against post text.
- * Requires words to appear in the SAME SENTENCE (proximity check)
- * to avoid false matches from unrelated co-occurrences.
- * Single words only match if they're distinctive brand/product names.
+ * TOPIC WORDS — the core domain words that indicate the post is actually about
+ * the monitor's topic. These are extracted from keywords and must appear to
+ * establish topical relevance. Without topic words, signal patterns alone
+ * (like "looking for" or "frustrated") match the entire subreddit.
+ *
+ * Strategy: find words that appear across MULTIPLE keywords — these are the
+ * domain-specific terms (e.g., "churn" appears in "churn rate killing",
+ * "reduce churn", "churn software"). Also include brand/competitor names.
  */
-function matchesKeyword(text: string, keyword: string): boolean {
-  const lower = text.toLowerCase();
-  const significant = extractSignificant(keyword);
+function extractTopicWords(keywords: string[]): Set<string> {
+  const topics = new Set<string>();
 
-  if (significant.length === 0) return lower.includes(keyword.toLowerCase().trim());
-
-  // Single word: only match distinctive terms (brand names, 6+ chars, not generic)
-  if (significant.length === 1) {
-    return significant[0].length >= 6 && lower.includes(significant[0]);
+  // Count word frequency across all keywords
+  const wordFreq = new Map<string, number>();
+  for (const kw of keywords) {
+    const words = new Set(
+      kw.toLowerCase().split(/\s+/)
+        .map(w => w.replace(/[^a-z0-9]/g, ''))
+        .filter(w => w.length > 3 && !STOP_WORDS.has(w))
+    );
+    for (const w of words) {
+      wordFreq.set(w, (wordFreq.get(w) ?? 0) + 1);
+    }
   }
 
-  // Multi-word: require 2+ significant words in the SAME sentence
-  const sentences = lower.split(/[.!?\n]+/);
-  for (const sentence of sentences) {
-    const matched = significant.filter(w => sentence.includes(w));
-    if (matched.length >= 2) return true;
+  // Words appearing in 3+ keywords are domain-specific topic words
+  for (const [word, freq] of wordFreq) {
+    if (freq >= 3) topics.add(word);
+  }
+
+  // Also add brand/competitor names (capitalized keywords with 1-2 words)
+  for (const kw of keywords) {
+    const trimmed = kw.trim();
+    if (/^[A-Z]/.test(trimmed) && trimmed.split(/\s+/).length <= 2) {
+      topics.add(trimmed.toLowerCase());
+    }
+  }
+
+  // Add common stems for matched topic words
+  for (const tw of [...topics]) {
+    if (tw.includes('churn')) { topics.add('churn'); topics.add('churning'); topics.add('churned'); }
+    if (tw.includes('cancel')) { topics.add('cancel'); topics.add('cancelling'); topics.add('cancellation'); topics.add('cancellations'); }
+    if (tw.includes('retention')) topics.add('retention');
+    if (tw.includes('subscrib')) { topics.add('subscriber'); topics.add('subscribers'); topics.add('subscription'); topics.add('unsubscrib'); }
+  }
+
+  return topics;
+}
+
+/**
+ * Check if the post is topically relevant to the monitor's domain.
+ * Returns 'title' if a topic word appears in the title (strongest),
+ * 'body' if it appears in the body, or false if no match.
+ */
+function checkTopicRelevance(title: string, body: string, topicWords: Set<string>, brandKeywords: string[]): 'title' | 'body' | false {
+  const titleLower = title.toLowerCase();
+  const fullLower = `${titleLower} ${body.toLowerCase()}`;
+
+  // Check brand/competitor names first (exact match)
+  for (const brand of brandKeywords) {
+    const bl = brand.toLowerCase();
+    if (titleLower.includes(bl)) return 'title';
+    if (fullLower.includes(bl)) return 'body';
+  }
+
+  // Check topic words
+  for (const tw of topicWords) {
+    if (titleLower.includes(tw)) return 'title';
+  }
+  for (const tw of topicWords) {
+    if (fullLower.includes(tw)) return 'body';
   }
 
   return false;
 }
 
 /**
- * Check if a keyword appears in the TITLE of the post.
- * Title relevance is the strongest indicator the post is actually ABOUT the topic,
- * not just mentioning it in passing within a long body text.
- */
-function matchesKeywordInTitle(title: string, keyword: string): boolean {
-  const lower = title.toLowerCase();
-  const significant = extractSignificant(keyword);
-
-  if (significant.length === 0) return lower.includes(keyword.toLowerCase().trim());
-
-  if (significant.length === 1) {
-    return significant[0].length >= 6 && lower.includes(significant[0]);
-  }
-
-  // For titles: require at least 2 significant words anywhere in title (titles are short)
-  const matched = significant.filter(w => lower.includes(w));
-  return matched.length >= 2;
-}
-
-/**
- * Posts that are blog-style self-promotion, success stories, or general advice
- * rarely represent actionable leads. They write ABOUT problems, not FROM the problem.
- */
-const BLOG_NOISE_PATTERNS = /\b(?:here'?s (?:what|how|my|the|exactly)|i (?:ran|analyzed|spent|tested|talked to|built|shipped|launched|went from)|how i (?:got|went|used|broke)|playbook|deep dive|breakdown|lessons? (?:learned|after|from)|what (?:i learned|nobody tells|actually worked)|guide to|tips? for|framework|psa:|unpopular opinion)\b/i;
-
-/**
  * First-person pain/need indicators — the post author IS the one with the problem.
  * Not writing about someone else's problem or sharing a story.
  */
-const FIRST_PERSON_NEED = /\b(?:i (?:need|want|am looking|can'?t|don'?t know how|struggle|'?m struggling|'?m losing|'?m tired|hate)|my (?:churn|retention|subscribers|customers|users|mrr|revenue|saas)|anyone (?:know|recommend|use|using|tried)|what (?:do you|should i|tools?)|help (?:me|with)|how (?:do i|can i|to (?:stop|reduce|prevent|fix))|should i|does anyone|has anyone|struggling with|frustrated with|looking for)\b/i;
+const FIRST_PERSON_NEED = /\b(?:i (?:need|want|am looking|can'?t|don'?t know how|struggle|'?m struggling|'?m losing|'?m tired|hate)|my (?:churn|retention|subscribers|customers|users|mrr|revenue|saas)|anyone (?:know|recommend|use|using|tried)|what (?:do you|should i|tools?)|help (?:me|with)|how (?:do i|can i|to (?:stop|reduce|prevent|fix))|should i|does anyone|has anyone|struggling with|frustrated with|looking for (?:a |an )?(?:tool|software|platform|solution|way))\b/i;
+
+/**
+ * Posts that are blog-style self-promotion or advice content.
+ */
+const BLOG_NOISE_PATTERNS = /\b(?:here'?s (?:what|how|my|the|exactly)|i (?:ran|analyzed|spent|tested|talked to|shipped|launched|went from|scraped)|how i (?:got|went|used|broke)|playbook|deep dive|breakdown|lessons? (?:learned|after|from)|what (?:i learned|nobody tells|actually worked)|guide to|tips? for|framework|psa:|unpopular opinion|case stud)\b/i;
 
 const PRO_SCAN_INTERVAL_MS = 1 * 60 * 60 * 1000; // 1 hour for pro users
 const FREE_SCAN_INTERVAL_MS = 3 * 60 * 60 * 1000; // 3 hours for free users
@@ -489,6 +521,10 @@ async function scanMonitor(
     createdUtc: number;
   }> = [];
 
+  // Extract topic words and brand names
+  const topicWords = extractTopicWords(keywords);
+  const brandKeywords = keywords.filter(kw => /^[A-Z]/.test(kw.trim()) && kw.trim().split(/\s+/).length <= 2);
+
   for (const post of posts) {
     if (post.author === '[deleted]' || post.author === 'AutoModerator') continue;
     if (post.stickied || post.locked) continue;
@@ -496,12 +532,12 @@ async function scanMonitor(
 
     const text = `${post.title} ${post.selftext ?? ''}`;
     const title = post.title;
+
+    // GATE 1: Topic relevance — must mention domain-specific words
+    const topicRelevance = checkTopicRelevance(title, post.selftext ?? '', topicWords, brandKeywords);
+    if (!topicRelevance) continue;
+
     const matches = matchPatterns(text);
-
-    const titleKeywordMatch = keywords.length > 0 && keywords.some(kw => matchesKeywordInTitle(title, kw));
-    const bodyKeywordMatch = keywords.length > 0 && keywords.some(kw => matchesKeyword(text, kw));
-    const keywordHit = titleKeywordMatch || bodyKeywordMatch;
-
     const positiveMatches = matches.filter(m => m.weight > 0);
     if (positiveMatches.length === 0) continue;
 
@@ -514,20 +550,18 @@ async function scanMonitor(
       if (st === 'pricing_objection') return hasCategory(matches, 'pricing_objection');
       return matches.some(m => m.category === (st as PatternCategory));
     });
-
     if (!hasSignal) continue;
 
-    // Blog/story noise filter — same logic as scanMonitorDirect
+    // Quality filter
     const isBlogNoise = BLOG_NOISE_PATTERNS.test(title);
     const hasFirstPersonNeed = FIRST_PERSON_NEED.test(text);
-    if (isBlogNoise && !hasFirstPersonNeed && !titleKeywordMatch) continue;
-    if (bodyKeywordMatch && !titleKeywordMatch && !hasFirstPersonNeed && !hasCategory(matches, 'buyer_intent')) continue;
+    if (isBlogNoise && topicRelevance !== 'title') continue;
+    if (topicRelevance === 'body' && !hasFirstPersonNeed && !hasCategory(matches, 'buyer_intent') && !hasCategory(matches, 'switching')) continue;
 
     const leadScore = scoreLeadPost(post);
     const signals = signalSummary(matches);
-    if (keywordHit) signals.push('keyword_match');
 
-    const titleBoost = titleKeywordMatch ? 10 : 0;
+    const titleBoost = topicRelevance === 'title' ? 10 : 0;
     const needBoost = hasFirstPersonNeed ? 5 : 0;
     const totalScore = leadScore.total + titleBoost + needBoost;
 
@@ -755,6 +789,11 @@ async function scanMonitorDirect(
 
   console.error(`[scanner] Fetched ${allPosts.length} posts, ${deduped.length} unique, ${posts.length} in configured subs`);
 
+  // Extract topic words and brand names from keywords for relevance checking
+  const topicWords = extractTopicWords(keywords);
+  const brandKeywords = keywords.filter(kw => /^[A-Z]/.test(kw.trim()) && kw.trim().split(/\s+/).length <= 2);
+  console.error(`[scanner] Topic words: ${[...topicWords].join(', ')} | Brands: ${brandKeywords.join(', ')}`);
+
   // Score and filter
   const results: Array<{
     title: string;
@@ -775,22 +814,24 @@ async function scanMonitorDirect(
     // ── Upfront junk filtering ──
     if (post.author === '[deleted]' || post.author === 'AutoModerator') continue;
     if (post.stickied || post.locked) continue;
-    // Skip posts older than 30 days
     if (post.created_utc > 0 && (Date.now() / 1000 - post.created_utc) > 30 * 86400) continue;
 
     const text = `${post.title} ${post.selftext ?? ''}`;
     const title = post.title;
+
+    // ═══ GATE 1: Topic relevance (MANDATORY) ═══
+    // The post must mention a domain-specific topic word or brand name.
+    // Without this, pattern-only matches return the entire subreddit.
+    const topicRelevance = checkTopicRelevance(title, post.selftext ?? '', topicWords, brandKeywords);
+    if (!topicRelevance) continue;
+
     const matches = matchPatterns(text);
 
-    // Check keyword relevance — title match is much stronger than body match
-    const titleKeywordMatch = keywords.length > 0 && keywords.some(kw => matchesKeywordInTitle(title, kw));
-    const bodyKeywordMatch = keywords.length > 0 && keywords.some(kw => matchesKeyword(text, kw));
-    const keywordMatch = titleKeywordMatch || bodyKeywordMatch;
-
-    // STRICT: posts MUST have at least one positive signal pattern
+    // ═══ GATE 2: Must have signal patterns ═══
     const positiveMatches = matches.filter(m => m.weight > 0);
     if (positiveMatches.length === 0) continue;
 
+    // ═══ GATE 3: Signal type must match monitor config ═══
     const hasSignal = signalTypes.length === 0 || signalTypes.some(st => {
       if (st === 'pain_point') return hasCategory(matches, 'pain') || hasCategory(matches, 'frustration');
       if (st === 'buyer_intent') return hasCategory(matches, 'buyer_intent');
@@ -800,29 +841,23 @@ async function scanMonitorDirect(
       if (st === 'pricing_objection') return hasCategory(matches, 'pricing_objection');
       return matches.some(m => m.category === (st as PatternCategory));
     });
-
     if (!hasSignal) continue;
 
-    // ── Blog/story noise filter ──
-    // Posts that are clearly blog-style self-promotion or success stories
-    // are not actionable leads even if they mention relevant keywords
+    // ═══ GATE 4: Quality filter ═══
     const isBlogNoise = BLOG_NOISE_PATTERNS.test(title);
     const hasFirstPersonNeed = FIRST_PERSON_NEED.test(text);
 
-    // If it looks like a blog post AND the author isn't expressing a personal need, skip it
-    // Exception: if the keyword appears in the TITLE, the post is topical enough to keep
-    if (isBlogNoise && !hasFirstPersonNeed && !titleKeywordMatch) continue;
+    // Blog-style posts are only kept if the topic is in the title (the post is literally about it)
+    if (isBlogNoise && topicRelevance !== 'title') continue;
 
-    // Body-only keyword matches without first-person need are low quality — skip
-    // These are posts that mention "churn" in passing but aren't about needing a solution
-    if (bodyKeywordMatch && !titleKeywordMatch && !hasFirstPersonNeed && !hasCategory(matches, 'buyer_intent')) continue;
+    // Body-only topic mentions need first-person need or strong buyer intent
+    if (topicRelevance === 'body' && !hasFirstPersonNeed && !hasCategory(matches, 'buyer_intent') && !hasCategory(matches, 'switching')) continue;
 
     const leadScore = scoreLeadPost(post);
     const signals = signalSummary(matches);
-    if (keywordMatch) signals.push('keyword_match');
 
-    // Score: lead score is the base. Title keyword match is a strong relevance signal.
-    const titleBoost = titleKeywordMatch ? 10 : 0;
+    // Score: lead score base + relevance bonuses
+    const titleBoost = topicRelevance === 'title' ? 10 : 0;
     const needBoost = hasFirstPersonNeed ? 5 : 0;
     const totalScore = leadScore.total + titleBoost + needBoost;
 
@@ -838,7 +873,7 @@ async function scanMonitorDirect(
       author: post.author,
       leadScore: leadScore.total,
       createdUtc: post.created_utc,
-      keywordMatch,
+      keywordMatch: !!topicRelevance,
     });
   }
 
