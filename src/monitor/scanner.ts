@@ -43,64 +43,49 @@ function extractSignificant(phrase: string): string[] {
 }
 
 /**
- * Intent modifiers — combined with topic keywords to pull posts
- * where someone is actively looking for a solution, not just discussing a topic.
- */
-const INTENT_MODIFIERS = [
-  'looking for', 'recommend', 'alternative to', 'need a',
-  'best tool', 'best software', 'anyone use', 'what do you use',
-  'switching from', 'replacement for', 'how do you handle',
-];
-
-/**
- * Convert user keywords into intent-focused Reddit search queries.
- * Combines topic terms with intent modifiers so results are people
- * actively seeking solutions, not general discussion.
+ * Convert user keywords into effective Reddit search queries.
+ *
+ * Strategy:
+ *   1. Keywords that already contain intent language → use as-is (best quality)
+ *   2. Brand/competitor names → search directly + "alternative" variant
+ *   3. Short topic phrases → use as-is for broad matching
+ *
+ * Reddit search is keyword-based, so natural phrases work best.
+ * Avoid combining unrelated words or synthetic query construction.
  */
 function buildSearchQueries(keywords: string[]): string[] {
   const queries: string[] = [];
 
-  // Extract core topic terms from all keywords
-  const topicTerms = new Set<string>();
-  for (const kw of keywords) {
-    const significant = extractSignificant(kw);
-    // Take the 1-2 most distinctive words (longest = most specific)
-    const sorted = significant.sort((a, b) => b.length - a.length);
-    for (const w of sorted.slice(0, 2)) {
-      if (w.length >= 4) topicTerms.add(w);
-    }
-  }
+  // Intent phrases that indicate the keyword is already a good search query
+  const INTENT_WORDS = /\b(?:looking for|need|best|recommend|tool|software|platform|alternative|how to|anyone use|what .+ use|track|prevent|reduce|help with)\b/i;
 
-  const topics = [...topicTerms].slice(0, 8); // cap to avoid query explosion
-
-  // Strategy 1: Topic + intent modifier (highest quality)
-  // "churn looking for tool", "retention recommend", etc.
-  for (const topic of topics.slice(0, 5)) {
-    for (const intent of INTENT_MODIFIERS.slice(0, 4)) {
-      queries.push(`${topic} ${intent}`);
-    }
-  }
-
-  // Strategy 2: Direct competitor/brand searches (pass-through keywords that look like brand names)
   for (const kw of keywords) {
     const trimmed = kw.trim();
-    // Brand names: single word, starts with uppercase, or known competitor patterns
-    if (trimmed.split(/\s+/).length === 1 && trimmed.length >= 4) {
-      queries.push(`${trimmed} alternative`);
+    if (!trimmed) continue;
+
+    const words = trimmed.split(/\s+/);
+
+    if (words.length === 1 && trimmed.length >= 4) {
+      // Single word — likely a brand/competitor name
       queries.push(trimmed);
+      queries.push(`${trimmed} alternative`);
+      queries.push(`${trimmed} review`);
+    } else if (INTENT_WORDS.test(trimmed)) {
+      // Already contains intent language — use as-is (these are gold)
+      queries.push(trimmed);
+    } else {
+      // Pain/problem phrase — extract core 2-3 words
+      const significant = extractSignificant(trimmed);
+      if (significant.length >= 2) {
+        queries.push(significant.slice(0, 3).join(' '));
+      } else if (significant.length === 1 && significant[0].length >= 5) {
+        queries.push(significant[0]);
+      }
     }
   }
 
-  // Strategy 3: Original keyword phrases (top 3 only, as fallback)
-  for (const kw of keywords.slice(0, 3)) {
-    const significant = extractSignificant(kw);
-    if (significant.length >= 2) {
-      queries.push(significant.slice(0, 3).join(' '));
-    }
-  }
-
-  // Deduplicate
-  return [...new Set(queries)];
+  // Deduplicate and cap at 30 queries to stay within rate limits
+  return [...new Set(queries)].slice(0, 30);
 }
 
 /**
@@ -644,10 +629,9 @@ async function scanMonitorDirect(
 
   if (isPublicApi) {
     // PUBLIC API PATH: ~10 req/min budget.
-    // Strategy: search within each configured subreddit (top 2 queries each) + browse new.
-    // This keeps results topically relevant (no global search spam from r/poker, r/VeteransBenefits).
-    // Budget: 2 searches per sub + 1 browse = 3 per sub × 8 subs = 24 requests (~2.5 min at 6.5s gap)
-    const topQueries = searchQueries.slice(0, 2);
+    // Strategy: search within each configured subreddit (top 4 queries each) + browse new.
+    // Budget: 4 searches per sub + 1 browse = 5 per sub × 8 subs = 40 requests (~4.3 min at 6.5s gap)
+    const topQueries = searchQueries.slice(0, 4);
     for (const sub of subreddits) {
       const cleanSub = sub.replace(/^r\//, '');
       // Search with top keyword queries inside this subreddit
