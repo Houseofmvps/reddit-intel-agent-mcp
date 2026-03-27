@@ -481,11 +481,9 @@ async function scanMonitor(
     const signals = signalSummary(matches);
     if (keywordHit && signals.length === 0) signals.push('keyword_match');
 
-    // Score: lead score is the primary metric. Pattern weight sum is a minor boost, not a multiplier.
-    const patternBoost = Math.min(15, matches.reduce((sum, m) => sum + Math.max(0, m.weight), 0));
-    // Keyword matches get a base score of 25 if no other signals
-    const keywordBoost = keywordHit && matches.length === 0 ? 25 : 0;
-    const totalScore = Math.max(leadScore.total + patternBoost + keywordBoost, keywordHit ? 20 : 0);
+    // Score: lead score IS the score. No double-counting patterns.
+    const keywordBoost = keywordHit ? 5 : 0;
+    const totalScore = leadScore.total + keywordBoost;
 
     results.push({
       title: post.title,
@@ -694,32 +692,22 @@ async function scanMonitorDirect(
       }
     }
 
-    // Cross-subreddit global search for broader discovery
-    if (searchQueries.length > 0) {
-      for (const query of searchQueries.slice(0, 3)) {
-        try {
-          const globalPosts = await reddit.search(query, {
-            sort: 'relevance',
-            time: 'week',
-            limit: 50,
-          });
-          allPosts.push(...globalPosts);
-        } catch (err) {
-          console.error(`[scanner] Global search failed for "${query}":`, err);
-        }
-      }
-    }
+    // No global search — restrict to configured subreddits only to avoid irrelevant noise
   }
 
   // Deduplicate by post ID
   const seen = new Set<string>();
-  const posts = allPosts.filter(p => {
+  const deduped = allPosts.filter(p => {
     if (!p.id || seen.has(p.id)) return false;
     seen.add(p.id);
     return true;
   });
 
-  console.error(`[scanner] Fetched ${allPosts.length} posts, ${posts.length} unique after dedup`);
+  // Filter to configured subreddits only — reject cross-sub noise from Reddit search
+  const allowedSubs = new Set(subreddits.map(s => s.replace(/^r\//, '').toLowerCase()));
+  const posts = deduped.filter(p => allowedSubs.has(p.subreddit.toLowerCase()));
+
+  console.error(`[scanner] Fetched ${allPosts.length} posts, ${deduped.length} unique, ${posts.length} in configured subs`);
 
   // Score and filter
   const results: Array<{
@@ -771,12 +759,10 @@ async function scanMonitorDirect(
     const signals = signalSummary(matches);
     if (keywordMatch) signals.push('keyword_match');
 
-    // Score: lead score + pattern boost + engagement. No free points for keyword-only.
-    const patternBoost = Math.min(15, positiveMatches.reduce((sum, m) => sum + m.weight, 0));
-    const engagementBoost = Math.min(10, Math.floor(((post.ups || 0) + (post.num_comments || 0) * 2) / 10));
-    // Keyword match amplifies an already-signaled post, doesn't create score from nothing
+    // Score: lead score IS the score. No double-counting patterns (already in leadScore).
+    // Keyword match is a small amplifier only.
     const keywordBoost = keywordMatch ? 5 : 0;
-    const totalScore = leadScore.total + patternBoost + engagementBoost + keywordBoost;
+    const totalScore = leadScore.total + keywordBoost;
 
     results.push({
       title: post.title,
@@ -788,7 +774,7 @@ async function scanMonitorDirect(
       upvotes: post.score,
       comments: post.num_comments,
       author: post.author,
-      leadScore: leadScore.total + engagementBoost,
+      leadScore: leadScore.total,
       createdUtc: post.created_utc,
       keywordMatch,
     });
