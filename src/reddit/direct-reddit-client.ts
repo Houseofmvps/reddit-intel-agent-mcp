@@ -23,6 +23,7 @@ export interface DirectSearchOptions {
 
 export interface TokenProvider {
   getAccessToken(): Promise<string>;
+  invalidate?(): void;
 }
 
 /**
@@ -63,7 +64,8 @@ export class DirectRedditClient {
    * Can search all of Reddit or restrict to a specific subreddit.
    */
   async search(query: string, opts: DirectSearchOptions = {}): Promise<RedditPost[]> {
-    const { subreddit, sort = 'relevance', time = 'week', limit = 100, after } = opts;
+    const { subreddit: rawSub, sort = 'relevance', time = 'week', limit = 100, after } = opts;
+    const subreddit = rawSub?.replace(/^r\//, '').trim();
 
     const params = new URLSearchParams({
       q: query,
@@ -152,9 +154,15 @@ export class DirectRedditClient {
     });
 
     if (resp.status === 401 && !retried) {
-      // Token might be expired — try once more with a fresh token
-      console.warn('[direct-reddit] Got 401, retrying with fresh token...');
+      // Token expired — invalidate cache and retry with a genuinely fresh token
+      console.warn('[direct-reddit] Got 401, invalidating cached token and retrying...');
+      this.tokenProvider.invalidate?.();
       return this.request(path, true);
+    }
+
+    if (resp.status === 401 && retried) {
+      const body = await resp.text().catch(() => '');
+      throw new Error(`Reddit API 401 after token refresh — token is invalid: ${body.slice(0, 200)}`);
     }
 
     if (!resp.ok) {
@@ -221,11 +229,13 @@ export class DirectRedditClient {
  * Rate limited to ~10 req/min by Reddit, but good enough as a fallback.
  */
 export class PublicRedditClient {
+  readonly _isPublicClient = true; // marker for scanMonitorDirect to detect public API budget
   private lastRequest = 0;
-  private readonly minDelay = 2000; // 2s between requests to avoid 429
+  private readonly minDelay = 6500; // ~9 req/min, safely under Reddit's ~10 req/min limit
 
   async search(query: string, opts: DirectSearchOptions = {}): Promise<RedditPost[]> {
-    const { subreddit, sort = 'relevance', time = 'week', limit = 100 } = opts;
+    const { subreddit: rawSub, sort = 'relevance', time = 'week', limit = 100 } = opts;
+    const subreddit = rawSub?.replace(/^r\//, '').trim();
 
     const params = new URLSearchParams({
       q: query,
@@ -257,8 +267,8 @@ export class PublicRedditClient {
     return this.request(`https://www.reddit.com/r/${subreddit}/${sort}.json?${params}`);
   }
 
-  private async request(url: string): Promise<RedditPost[]> {
-    // Simple rate limiting
+  private async request(url: string, retries = 2): Promise<RedditPost[]> {
+    // Rate limiting — enforce minimum gap between requests
     const now = Date.now();
     const wait = this.lastRequest + this.minDelay - now;
     if (wait > 0) await new Promise(r => setTimeout(r, wait));
@@ -268,8 +278,17 @@ export class PublicRedditClient {
       headers: { 'User-Agent': 'BuildRadar/2.0 (by /u/BuildRadarBot)' },
     });
 
+    // Retry on 429 with exponential backoff
+    if (resp.status === 429 && retries > 0) {
+      const backoff = (3 - retries) * 10_000 + 5_000; // 15s, 25s
+      console.error(`[public-reddit] 429 rate limited, backing off ${backoff / 1000}s...`);
+      await new Promise(r => setTimeout(r, backoff));
+      this.lastRequest = Date.now();
+      return this.request(url, retries - 1);
+    }
+
     if (!resp.ok) {
-      console.error(`[public-reddit] ${resp.status} for ${url}`);
+      console.error(`[public-reddit] ${resp.status} for ${url.slice(0, 120)}`);
       return [];
     }
 

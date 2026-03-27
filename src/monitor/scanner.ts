@@ -87,12 +87,12 @@ function matchesKeyword(text: string, keyword: string): boolean {
 
   const matched = significant.filter(w => lower.includes(w));
 
-  // Any 2+ significant words from the keyword appear → match
+  // Any 2+ significant words from the keyword co-occur → strong match
   if (matched.length >= 2) return true;
 
-  // Single word match only if it's a distinctive term (brand name, technical term 5+ chars)
-  // This lets "churnkey" or "baremetrics" match alone, but not "rate" or "tool"
-  if (matched.length === 1 && matched[0].length >= 5) return true;
+  // Single word match only for very distinctive terms (brand names 8+ chars)
+  // e.g. "churnkey", "baremetrics", "profitwell" — but NOT "cancel", "losing", "people"
+  if (matched.length === 1 && matched[0].length >= 8) return true;
 
   return false;
 }
@@ -280,7 +280,11 @@ async function scanUserMonitors(
           const composio = getComposio();
           const account = await composio.connectedAccounts.get(connAccountId);
           connected = account?.status === 'ACTIVE';
-        } catch {
+          if (!connected) {
+            console.warn(`[scanner] Composio account ${connAccountId} status: ${account?.status ?? 'unknown'} (not ACTIVE)`);
+          }
+        } catch (connErr) {
+          console.warn(`[scanner] connectedAccounts.get(${connAccountId}) failed:`, connErr instanceof Error ? connErr.message : connErr);
           const result = await checkRedditConnection(entityId);
           connected = result.connected;
         }
@@ -290,19 +294,31 @@ async function scanUserMonitors(
           const tokenProvider = new ComposioTokenProvider(getComposio(), connAccountId);
           const directClient = new DirectRedditClient(tokenProvider);
           let oauthWorked = false;
+          let authFailed = false;
           for (const monitor of monitors) {
             try {
               const before = stats.resultsFound;
               await scanMonitorDirect(userId, monitor, directClient, stats);
               if (stats.resultsFound > before) oauthWorked = true;
             } catch (err) {
+              const errMsg = err instanceof Error ? err.message : String(err);
+              if (errMsg.includes('401') || errMsg.includes('token is invalid') || errMsg.includes('No access_token')) {
+                console.error(`[scanner] AUTH FAILURE for user ${userId} monitor ${monitor.id}: ${errMsg}`);
+                authFailed = true;
+                break; // Don't waste time on other monitors with a broken token
+              }
               console.error(`[scanner] Error scanning monitor ${monitor.id} via Direct API:`, err);
               stats.errors++;
             }
           }
           if (oauthWorked) return;
-          // OAuth returned 0 results — fall through to public API fallback
-          console.error(`[scanner] Composio OAuth returned 0 results, falling back to public API`);
+          if (authFailed) {
+            console.error(`[scanner] Composio OAuth token invalid for user ${userId}, falling back to public API`);
+          } else {
+            // 0 results is legitimate — subreddits may just not have matching posts. Don't fallback.
+            console.log(`[scanner] Composio OAuth scan completed for user ${userId} — 0 matching results (not an error)`);
+            return;
+          }
         }
       }
     } catch (err) {
@@ -584,7 +600,8 @@ async function scanMonitorDirect(
   const keywords = monitor.keywords as string[];
   const signalTypes = monitor.signalTypes as string[];
 
-  console.error(`[scanner] Scanning monitor "${monitor.name}" via Direct Reddit API (${subreddits.length} subs, ${keywords.length} keywords)`);
+  const isPublicApi = (reddit as any)._isPublicClient === true;
+  console.error(`[scanner] Scanning monitor "${monitor.name}" via ${isPublicApi ? 'Public' : 'OAuth'} Reddit API (${subreddits.length} subs, ${keywords.length} keywords)`);
 
   const allPosts: RedditPost[] = [];
 
@@ -592,46 +609,78 @@ async function scanMonitorDirect(
   const searchQueries = keywords.length > 0 ? buildSearchQueries(keywords) : [];
   console.error(`[scanner] ${keywords.length} keywords → ${searchQueries.length} search queries: ${searchQueries.slice(0, 5).join(' | ')}${searchQueries.length > 5 ? '...' : ''}`);
 
-  for (const sub of subreddits) {
-    try {
-      if (searchQueries.length > 0) {
-        // Search each optimized query in this subreddit
-        for (const query of searchQueries) {
-          try {
-            const posts = await reddit.search(query, {
-              subreddit: sub,
-              sort: 'new',
-              time: 'week',
-              limit: 100,
-            });
-            allPosts.push(...posts);
-          } catch (kwErr) {
-            console.error(`[scanner] Search failed for "${query}" in r/${sub}:`, kwErr);
-          }
+  if (isPublicApi) {
+    // PUBLIC API PATH: ~10 req/min budget.
+    // Strategy: search within each configured subreddit (top 2 queries each) + browse new.
+    // This keeps results topically relevant (no global search spam from r/poker, r/VeteransBenefits).
+    // Budget: 2 searches per sub + 1 browse = 3 per sub × 8 subs = 24 requests (~2.5 min at 6.5s gap)
+    const topQueries = searchQueries.slice(0, 2);
+    for (const sub of subreddits) {
+      const cleanSub = sub.replace(/^r\//, '');
+      // Search with top keyword queries inside this subreddit
+      for (const query of topQueries) {
+        try {
+          const posts = await reddit.search(query, {
+            subreddit: cleanSub,
+            sort: 'new',
+            time: 'week',
+            limit: 100,
+          });
+          allPosts.push(...posts);
+          console.error(`[scanner] Search r/${cleanSub} "${query.slice(0, 30)}": ${posts.length} posts`);
+        } catch (err) {
+          console.error(`[scanner] Search failed for "${query}" in r/${cleanSub}:`, err);
         }
-      } else {
-        // No keywords — browse new posts (fallback)
-        const posts = await reddit.browseSubreddit(sub, 'new', { limit: 50 });
-        allPosts.push(...posts);
       }
-    } catch (err) {
-      console.error(`[scanner] Error fetching r/${sub}:`, err);
-    }
-  }
-
-  // Cross-subreddit global search for broader discovery
-  if (searchQueries.length > 0) {
-    // Use the first few most important queries globally
-    for (const query of searchQueries.slice(0, 3)) {
+      // Browse new posts for broader coverage
       try {
-        const globalPosts = await reddit.search(query, {
-          sort: 'relevance',
-          time: 'week',
-          limit: 50,
-        });
-        allPosts.push(...globalPosts);
+        const posts = await reddit.browseSubreddit(cleanSub, 'new', { limit: 100 });
+        allPosts.push(...posts);
+        console.error(`[scanner] Browse r/${cleanSub}: ${posts.length} posts`);
       } catch (err) {
-        console.error(`[scanner] Global search failed for "${query}":`, err);
+        console.error(`[scanner] Error browsing r/${cleanSub}:`, err);
+      }
+    }
+  } else {
+    // OAUTH API PATH: 90 req/min budget. Full search per subreddit.
+    for (const sub of subreddits) {
+      try {
+        if (searchQueries.length > 0) {
+          for (const query of searchQueries) {
+            try {
+              const posts = await reddit.search(query, {
+                subreddit: sub,
+                sort: 'new',
+                time: 'week',
+                limit: 100,
+              });
+              allPosts.push(...posts);
+            } catch (kwErr) {
+              console.error(`[scanner] Search failed for "${query}" in r/${sub}:`, kwErr);
+            }
+          }
+        } else {
+          const posts = await reddit.browseSubreddit(sub, 'new', { limit: 50 });
+          allPosts.push(...posts);
+        }
+      } catch (err) {
+        console.error(`[scanner] Error fetching r/${sub}:`, err);
+      }
+    }
+
+    // Cross-subreddit global search for broader discovery
+    if (searchQueries.length > 0) {
+      for (const query of searchQueries.slice(0, 3)) {
+        try {
+          const globalPosts = await reddit.search(query, {
+            sort: 'relevance',
+            time: 'week',
+            limit: 50,
+          });
+          allPosts.push(...globalPosts);
+        } catch (err) {
+          console.error(`[scanner] Global search failed for "${query}":`, err);
+        }
       }
     }
   }
@@ -835,7 +884,11 @@ export async function getClientForUser(
         try {
           const account = await getComposio().connectedAccounts.get(connAccountId);
           connected = account?.status === 'ACTIVE';
-        } catch {
+          if (!connected) {
+            console.warn(`[getClientForUser] Composio account ${connAccountId} status: ${account?.status ?? 'unknown'}`);
+          }
+        } catch (connErr) {
+          console.warn(`[getClientForUser] connectedAccounts.get(${connAccountId}) failed:`, connErr instanceof Error ? connErr.message : connErr);
           const result = await checkRedditConnection(entityId);
           connected = result.connected;
         }
@@ -844,7 +897,8 @@ export async function getClientForUser(
           return { type: 'direct-api', client: new DirectRedditClient(tokenProvider) };
         }
       }
-    } catch {
+    } catch (outerErr) {
+      console.warn(`[getClientForUser] Composio check failed for user ${userId}:`, outerErr instanceof Error ? outerErr.message : outerErr);
       // Fall through to direct
     }
   }

@@ -75,7 +75,8 @@ export async function checkRedditConnection(
       connected: !!reddit,
       connectionId: reddit?.connection?.connectedAccount?.id ?? null,
     };
-  } catch {
+  } catch (sessionErr) {
+    console.warn(`[composio-auth] Session approach failed for user ${userId}:`, sessionErr instanceof Error ? sessionErr.message : sessionErr);
     // Fallback to lower-level API if session approach fails
     const accounts = await composio.connectedAccounts.list({
       userIds: [userId],
