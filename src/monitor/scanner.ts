@@ -689,6 +689,11 @@ async function scanMonitorDirect(
               });
               allPosts.push(...posts);
             } catch (kwErr) {
+              const msg = kwErr instanceof Error ? kwErr.message : String(kwErr);
+              // Re-throw auth errors so the caller can detect and break
+              if (msg.includes('token is invalid') || msg.includes('No access_token')) {
+                throw kwErr;
+              }
               console.error(`[scanner] Search failed for "${query}" in r/${sub}:`, kwErr);
             }
           }
@@ -697,6 +702,10 @@ async function scanMonitorDirect(
           allPosts.push(...posts);
         }
       } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes('token is invalid') || msg.includes('No access_token')) {
+          throw err; // Propagate auth errors to stop wasting requests
+        }
         console.error(`[scanner] Error fetching r/${sub}:`, err);
       }
     }
