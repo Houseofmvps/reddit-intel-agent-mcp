@@ -59,6 +59,9 @@ function buildSearchQueries(keywords: string[]): string[] {
   // Intent phrases that indicate the keyword is already a good search query
   const INTENT_WORDS = /\b(?:looking for|need|best|recommend|tool|software|platform|alternative|how to|anyone use|what .+ use|track|prevent|reduce|help with)\b/i;
 
+  // Brand/competitor names — always include directly
+  const BRAND_PATTERN = /^[A-Z][a-zA-Z]+(?:\s?[A-Z][a-zA-Z]+)?$/;
+
   for (const kw of keywords) {
     const trimmed = kw.trim();
     if (!trimmed) continue;
@@ -69,7 +72,10 @@ function buildSearchQueries(keywords: string[]): string[] {
       // Single word — likely a brand/competitor name
       queries.push(trimmed);
       queries.push(`${trimmed} alternative`);
-      queries.push(`${trimmed} review`);
+    } else if (BRAND_PATTERN.test(trimmed)) {
+      // Multi-word brand name (e.g., "Stripe Billing", "ChartMogul")
+      queries.push(trimmed);
+      queries.push(`${trimmed} alternative`);
     } else if (INTENT_WORDS.test(trimmed)) {
       // Already contains intent language — use as-is (these are gold)
       queries.push(trimmed);
@@ -78,14 +84,13 @@ function buildSearchQueries(keywords: string[]): string[] {
       const significant = extractSignificant(trimmed);
       if (significant.length >= 2) {
         queries.push(significant.slice(0, 3).join(' '));
-      } else if (significant.length === 1 && significant[0].length >= 5) {
-        queries.push(significant[0]);
       }
+      // Skip single generic words — they match everything in the subreddit
     }
   }
 
-  // Deduplicate and cap at 30 queries to stay within rate limits
-  return [...new Set(queries)].slice(0, 30);
+  // Deduplicate and cap at 20 queries (fewer but more targeted)
+  return [...new Set(queries)].slice(0, 20);
 }
 
 /**
@@ -114,6 +119,38 @@ function matchesKeyword(text: string, keyword: string): boolean {
 
   return false;
 }
+
+/**
+ * Check if a keyword appears in the TITLE of the post.
+ * Title relevance is the strongest indicator the post is actually ABOUT the topic,
+ * not just mentioning it in passing within a long body text.
+ */
+function matchesKeywordInTitle(title: string, keyword: string): boolean {
+  const lower = title.toLowerCase();
+  const significant = extractSignificant(keyword);
+
+  if (significant.length === 0) return lower.includes(keyword.toLowerCase().trim());
+
+  if (significant.length === 1) {
+    return significant[0].length >= 6 && lower.includes(significant[0]);
+  }
+
+  // For titles: require at least 2 significant words anywhere in title (titles are short)
+  const matched = significant.filter(w => lower.includes(w));
+  return matched.length >= 2;
+}
+
+/**
+ * Posts that are blog-style self-promotion, success stories, or general advice
+ * rarely represent actionable leads. They write ABOUT problems, not FROM the problem.
+ */
+const BLOG_NOISE_PATTERNS = /\b(?:here'?s (?:what|how|my|the|exactly)|i (?:ran|analyzed|spent|tested|talked to|built|shipped|launched|went from)|how i (?:got|went|used|broke)|playbook|deep dive|breakdown|lessons? (?:learned|after|from)|what (?:i learned|nobody tells|actually worked)|guide to|tips? for|framework|psa:|unpopular opinion)\b/i;
+
+/**
+ * First-person pain/need indicators — the post author IS the one with the problem.
+ * Not writing about someone else's problem or sharing a story.
+ */
+const FIRST_PERSON_NEED = /\b(?:i (?:need|want|am looking|can'?t|don'?t know how|struggle|'?m struggling|'?m losing|'?m tired|hate)|my (?:churn|retention|subscribers|customers|users|mrr|revenue|saas)|anyone (?:know|recommend|use|using|tried)|what (?:do you|should i|tools?)|help (?:me|with)|how (?:do i|can i|to (?:stop|reduce|prevent|fix))|should i|does anyone|has anyone|struggling with|frustrated with|looking for)\b/i;
 
 const PRO_SCAN_INTERVAL_MS = 1 * 60 * 60 * 1000; // 1 hour for pro users
 const FREE_SCAN_INTERVAL_MS = 3 * 60 * 60 * 1000; // 3 hours for free users
@@ -453,17 +490,21 @@ async function scanMonitor(
   }> = [];
 
   for (const post of posts) {
+    if (post.author === '[deleted]' || post.author === 'AutoModerator') continue;
+    if (post.stickied || post.locked) continue;
+    if (post.created_utc > 0 && (Date.now() / 1000 - post.created_utc) > 30 * 86400) continue;
+
     const text = `${post.title} ${post.selftext ?? ''}`;
+    const title = post.title;
     const matches = matchPatterns(text);
 
-    // Check if post matches any monitor keyword (keyword match alone is valuable)
-    const keywordHit = keywords.length > 0 && keywords.some(kw => matchesKeyword(text, kw));
+    const titleKeywordMatch = keywords.length > 0 && keywords.some(kw => matchesKeywordInTitle(title, kw));
+    const bodyKeywordMatch = keywords.length > 0 && keywords.some(kw => matchesKeyword(text, kw));
+    const keywordHit = titleKeywordMatch || bodyKeywordMatch;
 
-    // Posts must have signal patterns OR match a keyword
-    if (matches.length === 0 && !keywordHit) continue;
+    const positiveMatches = matches.filter(m => m.weight > 0);
+    if (positiveMatches.length === 0) continue;
 
-    // Check if any matched signal type is in the monitor's config
-    const matchedCategories = matches.map(m => m.category);
     const hasSignal = signalTypes.some(st => {
       if (st === 'pain_point') return hasCategory(matches, 'pain') || hasCategory(matches, 'frustration');
       if (st === 'buyer_intent') return hasCategory(matches, 'buyer_intent');
@@ -471,19 +512,24 @@ async function scanMonitor(
       if (st === 'switching') return hasCategory(matches, 'switching');
       if (st === 'feature_request') return hasCategory(matches, 'feature_request');
       if (st === 'pricing_objection') return hasCategory(matches, 'pricing_objection');
-      return matchedCategories.includes(st as PatternCategory);
+      return matches.some(m => m.category === (st as PatternCategory));
     });
 
-    // Include if: has matching signal patterns OR matches a keyword
-    if (!hasSignal && !keywordHit) continue;
+    if (!hasSignal) continue;
+
+    // Blog/story noise filter — same logic as scanMonitorDirect
+    const isBlogNoise = BLOG_NOISE_PATTERNS.test(title);
+    const hasFirstPersonNeed = FIRST_PERSON_NEED.test(text);
+    if (isBlogNoise && !hasFirstPersonNeed && !titleKeywordMatch) continue;
+    if (bodyKeywordMatch && !titleKeywordMatch && !hasFirstPersonNeed && !hasCategory(matches, 'buyer_intent')) continue;
 
     const leadScore = scoreLeadPost(post);
     const signals = signalSummary(matches);
-    if (keywordHit && signals.length === 0) signals.push('keyword_match');
+    if (keywordHit) signals.push('keyword_match');
 
-    // Score: lead score IS the score. No double-counting patterns.
-    const keywordBoost = keywordHit ? 5 : 0;
-    const totalScore = leadScore.total + keywordBoost;
+    const titleBoost = titleKeywordMatch ? 10 : 0;
+    const needBoost = hasFirstPersonNeed ? 5 : 0;
+    const totalScore = leadScore.total + titleBoost + needBoost;
 
     results.push({
       title: post.title,
@@ -733,13 +779,15 @@ async function scanMonitorDirect(
     if (post.created_utc > 0 && (Date.now() / 1000 - post.created_utc) > 30 * 86400) continue;
 
     const text = `${post.title} ${post.selftext ?? ''}`;
+    const title = post.title;
     const matches = matchPatterns(text);
 
-    // Check if post matches any monitor keyword
-    const keywordMatch = keywords.length > 0 && keywords.some(kw => matchesKeyword(text, kw));
+    // Check keyword relevance — title match is much stronger than body match
+    const titleKeywordMatch = keywords.length > 0 && keywords.some(kw => matchesKeywordInTitle(title, kw));
+    const bodyKeywordMatch = keywords.length > 0 && keywords.some(kw => matchesKeyword(text, kw));
+    const keywordMatch = titleKeywordMatch || bodyKeywordMatch;
 
     // STRICT: posts MUST have at least one positive signal pattern
-    // Keyword-only matches without intent signals are noise
     const positiveMatches = matches.filter(m => m.weight > 0);
     if (positiveMatches.length === 0) continue;
 
@@ -755,14 +803,28 @@ async function scanMonitorDirect(
 
     if (!hasSignal) continue;
 
+    // ── Blog/story noise filter ──
+    // Posts that are clearly blog-style self-promotion or success stories
+    // are not actionable leads even if they mention relevant keywords
+    const isBlogNoise = BLOG_NOISE_PATTERNS.test(title);
+    const hasFirstPersonNeed = FIRST_PERSON_NEED.test(text);
+
+    // If it looks like a blog post AND the author isn't expressing a personal need, skip it
+    // Exception: if the keyword appears in the TITLE, the post is topical enough to keep
+    if (isBlogNoise && !hasFirstPersonNeed && !titleKeywordMatch) continue;
+
+    // Body-only keyword matches without first-person need are low quality — skip
+    // These are posts that mention "churn" in passing but aren't about needing a solution
+    if (bodyKeywordMatch && !titleKeywordMatch && !hasFirstPersonNeed && !hasCategory(matches, 'buyer_intent')) continue;
+
     const leadScore = scoreLeadPost(post);
     const signals = signalSummary(matches);
     if (keywordMatch) signals.push('keyword_match');
 
-    // Score: lead score IS the score. No double-counting patterns (already in leadScore).
-    // Keyword match is a small amplifier only.
-    const keywordBoost = keywordMatch ? 5 : 0;
-    const totalScore = leadScore.total + keywordBoost;
+    // Score: lead score is the base. Title keyword match is a strong relevance signal.
+    const titleBoost = titleKeywordMatch ? 10 : 0;
+    const needBoost = hasFirstPersonNeed ? 5 : 0;
+    const totalScore = leadScore.total + titleBoost + needBoost;
 
     results.push({
       title: post.title,
