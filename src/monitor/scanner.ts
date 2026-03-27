@@ -43,31 +43,60 @@ function extractSignificant(phrase: string): string[] {
 }
 
 /**
- * Convert user keywords into effective Reddit search queries.
- * Long phrases get converted to core terms joined with AND.
- * Short keywords stay as-is. Groups into batched OR queries for efficiency.
+ * Intent modifiers — combined with topic keywords to pull posts
+ * where someone is actively looking for a solution, not just discussing a topic.
+ */
+const INTENT_MODIFIERS = [
+  'looking for', 'recommend', 'alternative to', 'need a',
+  'best tool', 'best software', 'anyone use', 'what do you use',
+  'switching from', 'replacement for', 'how do you handle',
+];
+
+/**
+ * Convert user keywords into intent-focused Reddit search queries.
+ * Combines topic terms with intent modifiers so results are people
+ * actively seeking solutions, not general discussion.
  */
 function buildSearchQueries(keywords: string[]): string[] {
   const queries: string[] = [];
-  const shortTerms: string[] = [];
 
+  // Extract core topic terms from all keywords
+  const topicTerms = new Set<string>();
   for (const kw of keywords) {
     const significant = extractSignificant(kw);
-    if (significant.length <= 2) {
-      // Short keyword — collect to batch into OR query
-      shortTerms.push(significant.join(' ') || kw.trim());
-    } else {
-      // Long phrase — pick top 2-3 most distinctive words
-      // Reddit search works best with 2-3 terms
-      const core = significant.slice(0, 3);
-      queries.push(core.join(' '));
+    // Take the 1-2 most distinctive words (longest = most specific)
+    const sorted = significant.sort((a, b) => b.length - a.length);
+    for (const w of sorted.slice(0, 2)) {
+      if (w.length >= 4) topicTerms.add(w);
     }
   }
 
-  // Batch short terms into groups of 5 with OR (Reddit search limit)
-  for (let i = 0; i < shortTerms.length; i += 5) {
-    const batch = shortTerms.slice(i, i + 5);
-    queries.push(batch.join(' OR '));
+  const topics = [...topicTerms].slice(0, 8); // cap to avoid query explosion
+
+  // Strategy 1: Topic + intent modifier (highest quality)
+  // "churn looking for tool", "retention recommend", etc.
+  for (const topic of topics.slice(0, 5)) {
+    for (const intent of INTENT_MODIFIERS.slice(0, 4)) {
+      queries.push(`${topic} ${intent}`);
+    }
+  }
+
+  // Strategy 2: Direct competitor/brand searches (pass-through keywords that look like brand names)
+  for (const kw of keywords) {
+    const trimmed = kw.trim();
+    // Brand names: single word, starts with uppercase, or known competitor patterns
+    if (trimmed.split(/\s+/).length === 1 && trimmed.length >= 4) {
+      queries.push(`${trimmed} alternative`);
+      queries.push(trimmed);
+    }
+  }
+
+  // Strategy 3: Original keyword phrases (top 3 only, as fallback)
+  for (const kw of keywords.slice(0, 3)) {
+    const significant = extractSignificant(kw);
+    if (significant.length >= 2) {
+      queries.push(significant.slice(0, 3).join(' '));
+    }
   }
 
   // Deduplicate
@@ -75,9 +104,10 @@ function buildSearchQueries(keywords: string[]): string[] {
 }
 
 /**
- * Fuzzy keyword matching against post text.
- * For long phrases, checks if any 2+ significant words co-occur.
- * Single distinctive words (brand names, technical terms) match solo.
+ * Keyword matching against post text.
+ * Requires words to appear in the SAME SENTENCE (proximity check)
+ * to avoid false matches from unrelated co-occurrences.
+ * Single words only match if they're distinctive brand/product names.
  */
 function matchesKeyword(text: string, keyword: string): boolean {
   const lower = text.toLowerCase();
@@ -85,14 +115,17 @@ function matchesKeyword(text: string, keyword: string): boolean {
 
   if (significant.length === 0) return lower.includes(keyword.toLowerCase().trim());
 
-  const matched = significant.filter(w => lower.includes(w));
+  // Single word: only match distinctive terms (brand names, 6+ chars, not generic)
+  if (significant.length === 1) {
+    return significant[0].length >= 6 && lower.includes(significant[0]);
+  }
 
-  // Any 2+ significant words from the keyword co-occur → strong match
-  if (matched.length >= 2) return true;
-
-  // Single word match only for very distinctive terms (brand names 8+ chars)
-  // e.g. "churnkey", "baremetrics", "profitwell" — but NOT "cancel", "losing", "people"
-  if (matched.length === 1 && matched[0].length >= 8) return true;
+  // Multi-word: require 2+ significant words in the SAME sentence
+  const sentences = lower.split(/[.!?\n]+/);
+  for (const sentence of sentences) {
+    const matched = significant.filter(w => sentence.includes(w));
+    if (matched.length >= 2) return true;
+  }
 
   return false;
 }
@@ -152,7 +185,7 @@ async function tryGenerateDossier(
   monitorName: string,
   db: ReturnType<typeof getDb>,
 ): Promise<{ draftReply: string } | null> {
-  if (r.leadScore < 40) return null;
+  if (r.leadScore < 55) return null;
 
   try {
     const dossierData = generateDossier({
@@ -513,7 +546,7 @@ async function scanMonitor(
   }
 
   // Extract and upsert leads (users with high intent)
-  const highIntentResults = results.filter(r => r.leadScore >= 40);
+  const highIntentResults = results.filter(r => r.leadScore >= 55);
   for (const r of highIntentResults) {
     if (r.author === '[deleted]' || r.author === 'AutoModerator') continue;
 
@@ -712,39 +745,45 @@ async function scanMonitorDirect(
   }> = [];
 
   for (const post of posts) {
+    // ── Upfront junk filtering ──
+    if (post.author === '[deleted]' || post.author === 'AutoModerator') continue;
+    if (post.stickied || post.locked) continue;
+    // Skip posts older than 30 days
+    if (post.created_utc > 0 && (Date.now() / 1000 - post.created_utc) > 30 * 86400) continue;
+
     const text = `${post.title} ${post.selftext ?? ''}`;
     const matches = matchPatterns(text);
 
     // Check if post matches any monitor keyword
     const keywordMatch = keywords.length > 0 && keywords.some(kw => matchesKeyword(text, kw));
 
-    // Posts must have signal patterns OR match a keyword
-    if (matches.length === 0 && !keywordMatch) continue;
+    // STRICT: posts MUST have at least one positive signal pattern
+    // Keyword-only matches without intent signals are noise
+    const positiveMatches = matches.filter(m => m.weight > 0);
+    if (positiveMatches.length === 0) continue;
 
-    const matchedCategories = matches.map(m => m.category);
-    const hasSignal = signalTypes.some(st => {
+    const hasSignal = signalTypes.length === 0 || signalTypes.some(st => {
       if (st === 'pain_point') return hasCategory(matches, 'pain') || hasCategory(matches, 'frustration');
       if (st === 'buyer_intent') return hasCategory(matches, 'buyer_intent');
       if (st === 'workaround') return hasCategory(matches, 'workaround');
       if (st === 'switching') return hasCategory(matches, 'switching');
       if (st === 'feature_request') return hasCategory(matches, 'feature_request');
       if (st === 'pricing_objection') return hasCategory(matches, 'pricing_objection');
-      return matchedCategories.includes(st as PatternCategory);
+      return matches.some(m => m.category === (st as PatternCategory));
     });
 
-    // Include if: has matching signal patterns OR matches a keyword
-    if (!hasSignal && !keywordMatch) continue;
+    if (!hasSignal) continue;
 
     const leadScore = scoreLeadPost(post);
     const signals = signalSummary(matches);
-    if (keywordMatch && signals.length === 0) signals.push('keyword_match');
+    if (keywordMatch) signals.push('keyword_match');
 
-    // Lead score is primary. Pattern weight is a minor boost (capped at 15). Engagement adds up to 10.
-    const patternBoost = Math.min(15, matches.reduce((sum, m) => sum + Math.max(0, m.weight), 0));
+    // Score: lead score + pattern boost + engagement. No free points for keyword-only.
+    const patternBoost = Math.min(15, positiveMatches.reduce((sum, m) => sum + m.weight, 0));
     const engagementBoost = Math.min(10, Math.floor(((post.ups || 0) + (post.num_comments || 0) * 2) / 10));
-    // Keyword matches get a base score of 25 if no other signals
-    const keywordBoost = keywordMatch && matches.length === 0 ? 25 : 0;
-    const totalScore = Math.max(leadScore.total + patternBoost + engagementBoost + keywordBoost, keywordMatch ? 20 : 0);
+    // Keyword match amplifies an already-signaled post, doesn't create score from nothing
+    const keywordBoost = keywordMatch ? 5 : 0;
+    const totalScore = leadScore.total + patternBoost + engagementBoost + keywordBoost;
 
     results.push({
       title: post.title,
@@ -792,7 +831,7 @@ async function scanMonitorDirect(
   }
 
   // Extract leads
-  const highIntentResults = results.filter(r => r.leadScore >= 40);
+  const highIntentResults = results.filter(r => r.leadScore >= 55);
   for (const r of highIntentResults) {
     if (r.author === '[deleted]' || r.author === 'AutoModerator') continue;
 

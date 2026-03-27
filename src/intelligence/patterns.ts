@@ -99,11 +99,24 @@ const PATTERN_RULES: PatternRule[] = [
   { regex: /\b(?:banana for scale|username checks out)\b/i, label: 'reddit_joke', category: 'meme_noise', weight: -1 },
 ];
 
+/**
+ * Check if a match is negated by a preceding "not", "no", "don't", "never", etc.
+ * Looks at the 30 chars before the match for negation words.
+ */
+function isNegated(text: string, matchIndex: number): boolean {
+  const prefix = text.slice(Math.max(0, matchIndex - 30), matchIndex).toLowerCase();
+  return /\b(?:not|no|don'?t|doesn'?t|won'?t|can'?t|never|isn'?t|aren'?t|wasn'?t|without|neither)\s*$/.test(prefix);
+}
+
 export function matchPatterns(text: string): PatternMatch[] {
   const matches: PatternMatch[] = [];
   for (const rule of PATTERN_RULES) {
-    const m = text.match(rule.regex);
+    const m = rule.regex.exec(text);
     if (m) {
+      // Skip positive signals that are negated (e.g., "NOT willing to pay")
+      if (rule.weight > 0 && m.index !== undefined && isNegated(text, m.index)) {
+        continue;
+      }
       matches.push({
         label: rule.label,
         category: rule.category,
