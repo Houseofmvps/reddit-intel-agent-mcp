@@ -153,16 +153,22 @@ export class DirectRedditClient {
       },
     });
 
-    if (resp.status === 401 && !retried) {
-      // Token expired — invalidate cache and retry with a genuinely fresh token
-      console.warn('[direct-reddit] Got 401, invalidating cached token and retrying...');
-      this.tokenProvider.invalidate?.();
-      return this.request(path, true);
+    // Reddit returns 403 "Blocked" (not 401) for expired/invalid OAuth tokens
+    if ((resp.status === 401 || resp.status === 403) && !retried) {
+      const body = await resp.text().catch(() => '');
+      const isAuthError = resp.status === 401 || body.includes('Blocked') || body.includes('<!doctype');
+      if (isAuthError) {
+        console.warn(`[direct-reddit] Got ${resp.status} (auth error), invalidating token and retrying...`);
+        this.tokenProvider.invalidate?.();
+        return this.request(path, true);
+      }
+      // Non-auth 403 (e.g., private subreddit)
+      throw new Error(`Reddit API ${resp.status}: ${body.slice(0, 200)}`);
     }
 
-    if (resp.status === 401 && retried) {
+    if ((resp.status === 401 || resp.status === 403) && retried) {
       const body = await resp.text().catch(() => '');
-      throw new Error(`Reddit API 401 after token refresh — token is invalid: ${body.slice(0, 200)}`);
+      throw new Error(`Reddit API ${resp.status} after token refresh — token is invalid: ${body.slice(0, 200)}`);
     }
 
     if (!resp.ok) {

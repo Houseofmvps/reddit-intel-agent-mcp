@@ -335,7 +335,7 @@ async function scanUserMonitors(
               if (stats.resultsFound > before) oauthWorked = true;
             } catch (err) {
               const errMsg = err instanceof Error ? err.message : String(err);
-              if (errMsg.includes('401') || errMsg.includes('token is invalid') || errMsg.includes('No access_token')) {
+              if (errMsg.includes('401') || errMsg.includes('403') || errMsg.includes('token is invalid') || errMsg.includes('No access_token') || errMsg.includes('Blocked')) {
                 console.error(`[scanner] AUTH FAILURE for user ${userId} monitor ${monitor.id}: ${errMsg}`);
                 authFailed = true;
                 break; // Don't waste time on other monitors with a broken token
