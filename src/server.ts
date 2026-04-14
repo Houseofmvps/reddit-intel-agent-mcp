@@ -339,6 +339,21 @@ export async function startHttp(port: number) {
       }
     }
 
+    // ─── Admin API routes (session auth, email allowlist) ────────
+    if (url.startsWith('/admin')) {
+      try {
+        const { handleAdminRequest } = await import('./api/admin.js');
+        const handled = await handleAdminRequest(req, res);
+        if (handled) return;
+      } catch (err) {
+        if (!res.writableEnded) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Admin error' }));
+        }
+      }
+      return;
+    }
+
     // ─── Dashboard API routes (bypass API key, uses session auth) ──
     if (url.startsWith('/dashboard/')) {
       try {
