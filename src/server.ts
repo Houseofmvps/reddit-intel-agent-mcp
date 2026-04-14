@@ -329,6 +329,16 @@ export async function startHttp(port: number) {
       return;
     }
 
+    // ─── Link tracking redirects (/r/:hash) ─────────────────────
+    if (url.startsWith('/r/') && req.method === 'GET') {
+      const hash = url.slice(3).split('?')[0];
+      if (hash) {
+        const { handleTrackingRedirect } = await import('./api/tracking.js');
+        await handleTrackingRedirect(req, res, hash);
+        return;
+      }
+    }
+
     // ─── Dashboard API routes (bypass API key, uses session auth) ──
     if (url.startsWith('/dashboard/')) {
       try {

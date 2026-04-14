@@ -182,6 +182,39 @@ export const subredditPlaybook = pgTable('subreddit_playbook', {
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });
 
+export const trackingLink = pgTable('tracking_link', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  hash: text('hash').notNull().unique(),          // e.g. "a3f9b2c1" — forms /r/a3f9b2c1
+  destinationUrl: text('destination_url').notNull(),
+  clickCount: integer('click_count').notNull().default(0),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+export const outreachLog = pgTable('outreach_log', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  resultId: text('result_id').references(() => scanResult.id, { onDelete: 'set null' }),
+  subreddit: text('subreddit').notNull(),
+  postTitle: text('post_title').notNull(),
+  postUrl: text('post_url'),
+  tone: text('tone').notNull(),
+  replyText: text('reply_text').notNull(),
+  trackingLinkId: text('tracking_link_id').references(() => trackingLink.id, { onDelete: 'set null' }),
+  postedAt: timestamp('posted_at').notNull().defaultNow(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+export const linkClick = pgTable('link_click', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  trackingLinkId: text('tracking_link_id').notNull().references(() => trackingLink.id, { onDelete: 'cascade' }),
+  userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  referrer: text('referrer'),
+  userAgent: text('user_agent'),
+  ip: text('ip'),   // SHA-256 hashed, first 16 chars only
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
 export const marketSnapshot = pgTable('market_snapshot', {
   id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
   userId: text('user_id').notNull().references(() => user.id),

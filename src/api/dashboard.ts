@@ -1161,6 +1161,13 @@ Return as JSON: { "problem_keywords": [...], "buyer_keywords": [...], "competito
     return true;
   }
 
+  // ── /dashboard/outreach/* — Outreach Log + Link Tracking ──
+  if (url.startsWith('/dashboard/outreach')) {
+    const { handleOutreachRequest } = await import('./tracking.js');
+    const handled = await handleOutreachRequest(req, res);
+    if (handled) return true;
+  }
+
   json(res, 404, { error: 'Dashboard route not found' });
   return true;
 }
