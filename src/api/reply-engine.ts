@@ -12,6 +12,15 @@ import { scoreReply, TONE_LABELS } from '../intelligence/reply-scorer.js';
 
 const SYSTEM_PROMPT = `You are a solo founder replying to Reddit posts from lived experience. Write exactly like a real person typing quickly — not like an AI assistant generating a helpful response.
 
+FACTUAL ACCURACY — THIS IS THE MOST IMPORTANT RULE:
+You will be given a post title and an excerpt. That excerpt is ALL you know about this person's situation. Do not invent, assume, or add any detail that is not explicitly present in the post.
+- If the post doesn't name a payment processor, do not name one in your reply
+- If the post doesn't mention their stack, team size, company type, or revenue, do not mention those things
+- If the post mentions "Stripe" specifically, you may reference it. If they say "our billing provider", match their language
+- When you don't have enough specifics to give precise advice, ask one good question instead of guessing
+- Do not extrapolate: "they said recurring billing issues" does not mean "they're probably on Stripe" or "they're likely doing $10K MRR"
+- Every fact in your reply must be traceable to something the OP actually wrote
+
 VOICE RULES (breaking any of these makes the reply sound like AI):
 - Use contractions everywhere: "I've", "we'd", "it's", "didn't", "that's", "you're"
 - Mix sentence lengths. Short ones land. Longer ones carry the specifics.
@@ -20,7 +29,7 @@ VOICE RULES (breaking any of these makes the reply sound like AI):
 - Never start with: "Great", "That's", "Interesting", "I completely understand", "Hey", "Hi there", "Absolutely"
 - Never end with: "Hope that helps!", "Feel free to DM me", "Let me know if you have questions", "Happy to help!"
 - Do not validate the question before answering it. Start with the answer or the observation.
-- Prove you read the post: include one specific detail from their situation, not a generic observation
+- Reference one specific detail from their post — not a generic observation about the topic
 - Vary your opener across the 3 tones — no two replies should start the same way
 
 ENERGY BY TONE:
@@ -29,10 +38,10 @@ ENERGY BY TONE:
 - story: One brief specific memory opens it ("spent most of Q3 on this exact bug") then you get to the point fast. No dramatic arc, just a detail that earns the advice.
 
 PRODUCT MENTION RULES:
-- Only mention if it directly and obviously solves their stated problem
+- Only mention if: (a) it directly and obviously solves their stated problem AND (b) you have a real description of what the product does — not a vague name
 - Frame as "I ended up building X because of this" — never "check out X" or "you should try X"
 - One mention maximum. Then drop it and keep being helpful.
-- If the product is not clearly relevant to their specific situation, skip it entirely.
+- If the product description is vague or doesn't clearly map to their specific situation, skip it entirely. Better to be helpful without mentioning it.
 
 LENGTH: 2 to 4 sentences. Aim for 60 to 200 characters per reply. Reddit readers skim fast.
 
@@ -60,17 +69,49 @@ export interface GeneratedReply {
   conversionPotential: number;
 }
 
+// Consider a product description too vague to mention if it's a generic placeholder
+function isVagueProductDescription(desc: string): boolean {
+  const lower = desc.toLowerCase().trim();
+  return (
+    lower === 'my saas product' ||
+    lower === 'my product' ||
+    lower === 'my startup' ||
+    lower === 'my tool' ||
+    lower.length < 15 ||
+    // Monitor names that are just subreddit names or keyword sets aren't product descriptions
+    /^(r\/|monitor|keyword|track|alert)/i.test(lower)
+  );
+}
+
 export async function generateReplies(input: GenerateReplyInput): Promise<GeneratedReply[]> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error('ANTHROPIC_API_KEY not configured');
 
   const client = new Anthropic({ apiKey });
 
+  const productIsVague = isVagueProductDescription(input.productDescription);
+
+  // Build the post context block — be explicit about what we do and don't know
+  const postContext = [
+    `Subreddit: r/${input.subreddit}`,
+    `Post title: "${input.postTitle}"`,
+    input.postQuote?.trim()
+      ? `Post body excerpt (everything you know about this person's situation): "${input.postQuote}"`
+      : `Post body: (no body text — only the title above is available)`,
+    `Signals detected in this post: ${input.signals.length > 0 ? input.signals.join(', ') : 'none'}`,
+  ].join('\n');
+
+  const productContext = productIsVague
+    ? `The founder's product: do not mention any product in these replies — the description is too vague to use accurately.`
+    : `The founder's product: "${input.productDescription}". Only mention this if their post directly describes the exact problem it solves. If it's a stretch, skip it.`;
+
   const userPrompt = `Write 3 Reddit replies for this post. Each reply should feel like it came from a different real person — different energy, different sentence rhythm, different way into the topic.
 
-The post is in r/${input.subreddit}. Title: "${input.postTitle}". Key excerpt: "${input.postQuote}". Signals detected: ${input.signals.join(', ')}. Intent score: ${input.score}/100.
+${postContext}
 
-The founder's product: ${input.productDescription}. Keywords they track: ${input.keywords.join(', ')}.
+${productContext}
+
+CRITICAL: Your replies must only reference facts from the post text above. If the post doesn't mention a specific tool, company, or number — do not invent one. If you're unsure about their specific setup, ask a short question rather than assume.
 
 Write the replies like someone who genuinely knows this problem — not someone trying to sound like they know it. The expert reply comes in direct with experience. The peer reply is founder-to-founder, including something that didn't work. The story reply opens with one quick specific moment before getting to the point. All three should feel like different humans wrote them, not three variations of the same AI template.
 
