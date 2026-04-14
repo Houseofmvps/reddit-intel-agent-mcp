@@ -3,6 +3,7 @@
  */
 
 import { startStdio, startHttp } from './server.js';
+import { runStartupMigrations } from './db/startup-migrate.js';
 
 function parseBool(val: string | undefined): boolean {
   if (!val) return false;
@@ -32,8 +33,20 @@ if (isHttp) {
   ];
   const missing = REQUIRED_HTTP_ENV.filter(k => !process.env[k]);
   if (missing.length > 0) {
-    console.error(`[startup] Missing required env vars: ${missing.join(', ')}`);
+    console.error(`[startup] FATAL — missing required env vars: ${missing.join(', ')}`);
     process.exit(1);
+  }
+
+  // Warn (don't crash) for optional but important vars
+  const WARN_IF_MISSING = [
+    { key: 'RESEND_API_KEY', impact: 'email alerts and daily digest will be silently skipped' },
+    { key: 'ANTHROPIC_API_KEY', impact: 'Reply Coach, dossier generation, and playbook analysis will fail' },
+    { key: 'POLAR_WEBHOOK_SECRET', impact: 'Polar.sh payments will not be verified' },
+  ];
+  for (const { key, impact } of WARN_IF_MISSING) {
+    if (!process.env[key]) {
+      console.error(`[startup] WARNING — ${key} not set: ${impact}`);
+    }
   }
 }
 
@@ -49,6 +62,7 @@ process.on('uncaughtException', (err) => {
 
 async function main() {
   if (isHttp) {
+    await runStartupMigrations();
     await startHttp(port);
   } else {
     await startStdio();

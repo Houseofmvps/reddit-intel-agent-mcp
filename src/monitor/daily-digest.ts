@@ -37,7 +37,7 @@ export async function runDailyDigest(): Promise<DigestStats> {
 
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
-    console.error('[daily-digest] RESEND_API_KEY not set, skipping digest');
+    console.error('[daily-digest] RESEND_API_KEY not set — daily digest skipped entirely. Set RESEND_API_KEY to enable email digests.');
     return stats;
   }
 

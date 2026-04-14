@@ -92,7 +92,7 @@ async function sendSlackAlert(webhookUrl: string, payload: AlertPayload): Promis
 async function sendEmailAlert(user: User, payload: AlertPayload): Promise<void> {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
-    console.error('[alerts] RESEND_API_KEY not set, skipping email alert');
+    console.error(`[alerts] RESEND_API_KEY not set — email alert skipped for ${user.email} (monitor: ${payload.monitorName}). Set RESEND_API_KEY to enable alerts.`);
     return;
   }
 
