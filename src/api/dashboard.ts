@@ -1168,6 +1168,13 @@ Return as JSON: { "problem_keywords": [...], "buyer_keywords": [...], "competito
     if (handled) return true;
   }
 
+  // ── /dashboard/warmup/* — 30-Day Warm-up Plan ──
+  if (url.startsWith('/dashboard/warmup')) {
+    const { handleWarmupRequest } = await import('./warmup.js');
+    const handled = await handleWarmupRequest(req, res);
+    if (handled) return true;
+  }
+
   json(res, 404, { error: 'Dashboard route not found' });
   return true;
 }

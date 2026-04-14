@@ -215,6 +215,15 @@ export const linkClick = pgTable('link_click', {
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });
 
+export const warmupPlan = pgTable('warmup_plan', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  userId: text('user_id').notNull().unique().references(() => user.id, { onDelete: 'cascade' }),
+  startedAt: timestamp('started_at').notNull().defaultNow(),
+  completedDays: jsonb('completed_days').notNull().default([]).$type<number[]>(),
+  targetSubreddits: jsonb('target_subreddits').notNull().default([]).$type<string[]>(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
 export const marketSnapshot = pgTable('market_snapshot', {
   id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
   userId: text('user_id').notNull().references(() => user.id),
