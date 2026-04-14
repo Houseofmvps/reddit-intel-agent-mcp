@@ -908,22 +908,38 @@ export async function handleDashboardRequest(
       return true;
     }
 
-    // Check cache first
+    // Load result context upfront (needed for scoring whether cached or fresh)
+    const [result] = await db.select().from(schema.scanResult)
+      .where(eq(schema.scanResult.id, body.resultId));
+    if (!result) {
+      json(res, 404, { error: 'Result not found' });
+      return true;
+    }
+
+    const scoringContext = {
+      subreddit: result.subreddit,
+      signals: (result.signals as string[]) || [],
+      postTitle: result.title,
+    };
+
+    // Check cache first — score dynamically on the way out
     const existing = await db.select().from(schema.generatedReply)
       .where(and(
         eq(schema.generatedReply.userId, userId),
         eq(schema.generatedReply.resultId, body.resultId),
       ));
     if (existing.length > 0) {
-      json(res, 200, { replies: existing.map(r => ({ tone: r.tone, text: r.replyText })), cached: true });
-      return true;
-    }
-
-    // Load result + monitor context
-    const [result] = await db.select().from(schema.scanResult)
-      .where(eq(schema.scanResult.id, body.resultId));
-    if (!result) {
-      json(res, 404, { error: 'Result not found' });
+      const { scoreReply, TONE_LABELS } = await import('../intelligence/reply-scorer.js');
+      const replies = existing.map(r => {
+        const scores = scoreReply(r.replyText, scoringContext);
+        return {
+          tone: r.tone,
+          label: TONE_LABELS[r.tone] ?? r.tone,
+          text: r.replyText,
+          ...scores,
+        };
+      });
+      json(res, 200, { replies, cached: true, remaining: limit - dailyCount });
       return true;
     }
 
@@ -943,7 +959,7 @@ export async function handleDashboardRequest(
         keywords: (monitorRow?.keywords as string[]) || [],
       });
 
-      // Cache the replies
+      // Cache the replies (store text + tone; scores are recomputed on read)
       for (const reply of replies) {
         await db.insert(schema.generatedReply).values({
           userId,
