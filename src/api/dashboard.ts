@@ -895,12 +895,12 @@ export async function handleDashboardRequest(
 
     // Check user tier
     const [me] = await db.select().from(schema.user).where(eq(schema.user.id, userId));
-    const limit = me?.tier === 'pro' ? 50 : 3;
+    const limit = me?.tier === 'pro' ? 200 : 3;
     if (dailyCount >= limit) {
       json(res, 429, {
         error: me?.tier === 'pro'
-          ? 'Daily reply limit reached (50/day)'
-          : 'Free tier limit reached (3/day). Upgrade to Pro for 50 replies/day.',
+          ? 'Daily coaching limit reached. Resets at midnight.'
+          : 'Free plan: 3 coaching sessions per day. Upgrade to Pro for unlimited.',
         tier: me?.tier,
         limit,
         used: dailyCount,
