@@ -166,6 +166,22 @@ export const generatedReply = pgTable('generated_reply', {
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });
 
+export const subredditPlaybook = pgTable('subreddit_playbook', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  subreddit: text('subreddit').notNull().unique(), // stored without "r/" prefix
+  selfPromoAllowed: text('self_promo_allowed').notNull().default('unknown'), // 'yes' | 'flair' | 'no' | 'unknown'
+  communityTone: text('community_tone').notNull().default('mixed'), // 'technical' | 'founder' | 'consumer' | 'mixed'
+  banRiskLevel: text('ban_risk_level').notNull().default('medium'), // 'low' | 'medium' | 'high'
+  bestTimeToEngage: text('best_time_to_engage'), // e.g. "Tue-Thu, 9am-12pm ET"
+  avgRepliesPerPost: integer('avg_replies_per_post').default(5),
+  exampleMention: text('example_mention'), // real post title showing successful founder mention
+  insightSummary: text('insight_summary'), // 2-3 sentence paragraph on how to engage
+  selfPromoNotes: text('self_promo_notes'), // specific rules or gotchas about self-promotion
+  topTopics: jsonb('top_topics').notNull().default([]).$type<string[]>(),
+  lastAnalyzedAt: timestamp('last_analyzed_at').notNull().defaultNow(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
 export const marketSnapshot = pgTable('market_snapshot', {
   id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
   userId: text('user_id').notNull().references(() => user.id),
