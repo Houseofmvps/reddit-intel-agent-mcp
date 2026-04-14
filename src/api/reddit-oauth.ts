@@ -71,7 +71,7 @@ export async function exchangeCodeForTokens(code: string): Promise<TokenResponse
 
   const data = await res.json() as TokenResponse;
   if (!data.access_token) {
-    throw new Error(`Reddit token exchange returned no access_token: ${JSON.stringify(data)}`);
+    throw new Error(`Reddit token exchange returned no access_token (keys: ${Object.keys(data).join(', ')})`);
   }
   return data;
 }

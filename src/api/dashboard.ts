@@ -379,7 +379,7 @@ export async function handleDashboardRequest(
       return true;
     }
 
-    // Free tier limit: 1 monitor
+    // Free tier limit: 3 monitors
     const [u] = await db.select().from(schema.user).where(eq(schema.user.id, userId));
     if (u?.tier !== 'pro') {
       const existing = await db.select().from(schema.monitor).where(eq(schema.monitor.userId, userId));

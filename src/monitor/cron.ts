@@ -8,9 +8,12 @@
 
 import { runScanCycle } from './scanner.js';
 import { runDailyDigest } from './daily-digest.js';
+import { getDb, schema } from '../db/index.js';
+import { lt } from 'drizzle-orm';
 
 const DEFAULT_INTERVAL_MS = 1 * 60 * 60 * 1000; // 1 hour (scanner applies per-tier staleness)
 const DAILY_DIGEST_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const REPLY_CACHE_TTL_DAYS = 30;
 
 let scanTimer: ReturnType<typeof setInterval> | null = null;
 let digestTimer: ReturnType<typeof setInterval> | null = null;
@@ -66,6 +69,16 @@ export function startMonitorCron(intervalMs = DEFAULT_INTERVAL_MS): void {
 
   // Start daily digest cron at 8am UTC
   startDailyDigestCron();
+
+  // Weekly reply cache cleanup (runs once after 1 hour, then every 7 days)
+  const CLEANUP_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
+  const cleanupTimer = setTimeout(() => {
+    void runCacheCleanup();
+    setInterval(() => void runCacheCleanup(), CLEANUP_INTERVAL_MS).unref();
+  }, 60 * 60 * 1000);
+  if (cleanupTimer && typeof cleanupTimer === 'object' && 'unref' in cleanupTimer) {
+    cleanupTimer.unref();
+  }
 }
 
 /**
@@ -129,6 +142,19 @@ async function runDigestCycle(): Promise<void> {
     console.error('[cron] Daily digest failed:', err);
   } finally {
     digestRunning = false;
+  }
+}
+
+async function runCacheCleanup(): Promise<void> {
+  try {
+    const db = getDb();
+    const cutoff = new Date(Date.now() - REPLY_CACHE_TTL_DAYS * 24 * 60 * 60 * 1000);
+    const result = await db.delete(schema.generatedReply)
+      .where(lt(schema.generatedReply.createdAt, cutoff));
+    console.error(`[cron] Reply cache cleanup: removed old cached replies (cutoff: ${cutoff.toISOString()})`);
+    return result as unknown as void;
+  } catch (err) {
+    console.error('[cron] Reply cache cleanup failed:', err);
   }
 }
 

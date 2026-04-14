@@ -23,6 +23,20 @@ function parsePort(val: string | undefined): number {
 const isHttp = parseBool(process.env.REDDIT_INTEL_HTTP);
 const port = parsePort(process.env.REDDIT_INTEL_PORT);
 
+// Required env vars when running as HTTP server (dashboard mode)
+if (isHttp) {
+  const REQUIRED_HTTP_ENV: string[] = [
+    'DATABASE_URL',
+    'BETTER_AUTH_SECRET',
+    'CREDENTIAL_ENCRYPTION_KEY',
+  ];
+  const missing = REQUIRED_HTTP_ENV.filter(k => !process.env[k]);
+  if (missing.length > 0) {
+    console.error(`[startup] Missing required env vars: ${missing.join(', ')}`);
+    process.exit(1);
+  }
+}
+
 process.on('unhandledRejection', (err) => {
   console.error('Unhandled rejection:', err);
   if (!isHttp) process.exit(1);
